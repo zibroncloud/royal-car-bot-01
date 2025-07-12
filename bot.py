@@ -1171,7 +1171,7 @@ if __name__ == '__main__':
     main()dButton(
             f"⚙️ Gestisci #{req[0]}", 
             callback_data=f"manage_{req[0]}"
-        )])
+        )))
     
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
