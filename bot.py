@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CarValetBOT v3.3 - Sistema Gestione Auto Hotel
+CarValetBOT v3.4 - Sistema Gestione Auto Hotel
 By Claude AI & Zibroncloud
 Data: 12 Luglio 2025
 Changelog v3.4: Aggiunto comando /vedi_foto con selezione auto, indicatori foto
@@ -98,6 +98,8 @@ def get_auto_con_foto():
     except Exception as e:
         logging.error(f"Errore lettura auto con foto: {e}")
         return []
+
+def get_auto_by_id(auto_id):
     try:
         conn = sqlite3.connect('carvalet.db')
         cursor = conn.cursor()
@@ -674,6 +676,80 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 # Pulisci stato DOPO aver salvato
                 context.user_data.clear()
+                
+                # Crea messaggio di recap completo
+                recap_msg = f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
+                
+                if tipo_auto:
+                    recap_msg += f"\n🚗 Tipo: {tipo_auto}"
+                if numero_chiave is not None:
+                    recap_msg += f"\n🔑 Chiave: {numero_chiave}"
+                if note:
+                    recap_msg += f"\n📝 Note: {note}"
+                
+                recap_msg += f"\n\n📅 Richiesta del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
+                
+                await update.message.reply_text(recap_msg, parse_mode='Markdown')
+                
+            except Exception as e:
+                logging.error(f"Errore salvataggio richiesta: {e}")
+                await update.message.reply_text("❌ Errore durante il salvataggio della richiesta")
+                context.user_data.clear()
+        
+        elif state == 'upload_foto':
+            if text.lower() == 'fine':
+                auto_id = context.user_data.get('foto_auto_id')
+                context.user_data.clear()
+                
+                if auto_id:
+                    auto = get_auto_by_id(auto_id)
+                    if auto:
+                        await update.message.reply_text(f"📷 *Upload foto completato!*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+            else:
+                await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
+        
+        elif state.startswith('mod_'):
+            # Gestione modifiche
+            parts = state.split('_')
+            field = parts[1]
+            auto_id = int(parts[2])
+            
+            if field == 'chiave':
+                if text.lower() == 'rimuovi':
+                    value = None
+                else:
+                    try:
+                        value = int(text)
+                        if not (0 <= value <= 999):
+                            await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'rimuovi':")
+                            return
+                    except ValueError:
+                        await update.message.reply_text("❌ Inserisci un numero valido per la chiave o 'rimuovi':")
+                        return
+                
+                if update_auto_field(auto_id, 'numero_chiave', value):
+                    auto = get_auto_by_id(auto_id)
+                    text_result = f"rimossa" if value is None else f"impostata a {value}"
+                    await update.message.reply_text(f"✅ *Chiave {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                else:
+                    await update.message.reply_text("❌ Errore durante l'aggiornamento")
+                
+                context.user_data.clear()
+            
+            elif field == 'note':
+                if text.lower() == 'rimuovi':
+                    value = None
+                else:
+                    value = text.strip()
+                
+                if update_auto_field(auto_id, 'note', value):
+                    auto = get_auto_by_id(auto_id)
+                    text_result = "rimosse" if value is None else "aggiornate"
+                    await update.message.reply_text(f"✅ *Note {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                else:
+                    await update.message.reply_text("❌ Errore durante l'aggiornamento")
+                
+                context.user_data.clear()
         
         else:
             await update.message.reply_text("❓ *Comando non riconosciuto*\n\nUsa `/help` per vedere tutti i comandi disponibili.", parse_mode='Markdown')
@@ -860,6 +936,42 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text(f"✏️ *MODIFICA AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{tipo_text}{chiave_text}{note_text}\n\nCosa vuoi modificare?", 
                                         reply_markup=reply_markup, parse_mode='Markdown')
         
+        elif data.startswith('mostra_foto_'):
+            auto_id = int(data.split('_')[2])
+            auto = get_auto_by_id(auto_id)
+            if not auto:
+                await query.edit_message_text("❌ Auto non trovata")
+                return
+            
+            foto_list = get_foto_by_auto_id(auto_id)
+            if not foto_list:
+                await query.edit_message_text(f"📷 *Nessuna foto trovata*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}", parse_mode='Markdown')
+                return
+            
+            # Invia messaggio con info auto
+            await query.edit_message_text(f"📷 *FOTO AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📊 Stato: {auto[7]}\n📷 Totale foto: {len(foto_list)}", parse_mode='Markdown')
+            
+            # Invia tutte le foto (massimo 10 per volta per evitare spam)
+            max_foto_per_invio = 10
+            for i, foto in enumerate(foto_list):
+                if i >= max_foto_per_invio:
+                    await update.effective_chat.send_message(f"📷 Mostrate prime {max_foto_per_invio} foto di {len(foto_list)} totali.\nUsa di nuovo il comando per vedere le altre.")
+                    break
+                
+                file_id, data_upload = foto
+                try:
+                    # Formatta data upload
+                    data_formattata = datetime.strptime(data_upload, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
+                    caption = f"📷 Foto #{i+1} - {data_formattata}"
+                    
+                    await update.effective_chat.send_photo(
+                        photo=file_id,
+                        caption=caption
+                    )
+                except Exception as e:
+                    logging.error(f"Errore invio foto {file_id}: {e}")
+                    await update.effective_chat.send_message(f"❌ Errore caricamento foto #{i+1}")
+        
         elif data.startswith('mod_tipo_'):
             auto_id = int(data.split('_')[2])
             auto = get_auto_by_id(auto_id)
@@ -930,42 +1042,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             context.user_data['state'] = f'mod_note_{auto_id}'
             await query.edit_message_text(f"📝 *MODIFICA NOTE*\n\n{auto[1]} - Stanza {auto[3]}\nNote attuali: {auto[6] or 'Nessuna'}\n\nInserisci nuove note o scrivi 'rimuovi':", parse_mode='Markdown')
-        
-        elif data.startswith('mostra_foto_'):
-            auto_id = int(data.split('_')[2])
-            auto = get_auto_by_id(auto_id)
-            if not auto:
-                await query.edit_message_text("❌ Auto non trovata")
-                return
-            
-            foto_list = get_foto_by_auto_id(auto_id)
-            if not foto_list:
-                await query.edit_message_text(f"📷 *Nessuna foto trovata*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}", parse_mode='Markdown')
-                return
-            
-            # Invia messaggio con info auto
-            await query.edit_message_text(f"📷 *FOTO AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📊 Stato: {auto[7]}\n📷 Totale foto: {len(foto_list)}", parse_mode='Markdown')
-            
-            # Invia tutte le foto (massimo 10 per volta per evitare spam)
-            max_foto_per_invio = 10
-            for i, foto in enumerate(foto_list):
-                if i >= max_foto_per_invio:
-                    await update.effective_chat.send_message(f"📷 Mostrate prime {max_foto_per_invio} foto di {len(foto_list)} totali.\nUsa di nuovo il comando per vedere le altre.")
-                    break
-                
-                file_id, data_upload = foto
-                try:
-                    # Formatta data upload
-                    data_formattata = datetime.strptime(data_upload, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
-                    caption = f"📷 Foto #{i+1} - {data_formattata}"
-                    
-                    await update.effective_chat.send_photo(
-                        photo=file_id,
-                        caption=caption
-                    )
-                except Exception as e:
-                    logging.error(f"Errore invio foto {file_id}: {e}")
-                    await update.effective_chat.send_message(f"❌ Errore caricamento foto #{i+1}")
     
     except Exception as e:
         logging.error(f"Errore handle_callback_query: {e}")
@@ -1015,77 +1091,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-                
-                # Crea messaggio di recap completo
-                recap_msg = f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
-                
-                if tipo_auto:
-                    recap_msg += f"\n🚗 Tipo: {tipo_auto}"
-                if numero_chiave is not None:
-                    recap_msg += f"\n🔑 Chiave: {numero_chiave}"
-                if note:
-                    recap_msg += f"\n📝 Note: {note}"
-                
-                recap_msg += f"\n\n📅 Richiesta del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
-                
-                await update.message.reply_text(recap_msg, parse_mode='Markdown')
-                
-            except Exception as e:
-                logging.error(f"Errore salvataggio richiesta: {e}")
-                await update.message.reply_text("❌ Errore durante il salvataggio della richiesta")
-                context.user_data.clear()
-        
-        elif state == 'upload_foto':
-            if text.lower() == 'fine':
-                auto_id = context.user_data.get('foto_auto_id')
-                context.user_data.clear()
-                
-                if auto_id:
-                    auto = get_auto_by_id(auto_id)
-                    if auto:
-                        await update.message.reply_text(f"📷 *Upload foto completato!*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
-            else:
-                await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
-        
-        elif state.startswith('mod_'):
-            # Gestione modifiche
-            parts = state.split('_')
-            field = parts[1]
-            auto_id = int(parts[2])
-            
-            if field == 'chiave':
-                if text.lower() == 'rimuovi':
-                    value = None
-                else:
-                    try:
-                        value = int(text)
-                        if not (0 <= value <= 999):
-                            await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'rimuovi':")
-                            return
-                    except ValueError:
-                        await update.message.reply_text("❌ Inserisci un numero valido per la chiave o 'rimuovi':")
-                        return
-                
-                if update_auto_field(auto_id, 'numero_chiave', value):
-                    auto = get_auto_by_id(auto_id)
-                    text_result = f"rimossa" if value is None else f"impostata a {value}"
-                    await update.message.reply_text(f"✅ *Chiave {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
-                else:
-                    await update.message.reply_text("❌ Errore durante l'aggiornamento")
-                
-                context.user_data.clear()
-            
-            elif field == 'note':
-                if text.lower() == 'rimuovi':
-                    value = None
-                else:
-                    value = text.strip()
-                
-                if update_auto_field(auto_id, 'note', value):
-                    auto = get_auto_by_id(auto_id)
-                    text_result = "rimosse" if value is None else "aggiornate"
-                    await update.message.reply_text(f"✅ *Note {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
-                else:
-                    await update.message.reply_text("❌ Errore durante l'aggiornamento")
-                
-                context.user_data.clear()
+                await update.message.reply_text("
