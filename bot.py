@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CarValetBOT v3.0 - Sistema Gestione Auto Hotel
+CarValetBOT v3.1 - Sistema Gestione Auto Hotel
 By Claude AI & Zibroncloud
 Data: 12 Luglio 2025
+Changelog v3.1: Fix recap richiesta, messaggi migliorati, gestione errori
 """
 
 import os
@@ -13,7 +14,7 @@ from datetime import datetime, date
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-BOT_VERSION = "3.0"
+BOT_VERSION = "3.1"
 BOT_NAME = "CarValetBOT"
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -43,7 +44,7 @@ def init_db():
         auto_id INTEGER,
         file_id TEXT NOT NULL,
         data_upload TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (auto_id) REFERENCES auto (id)
+        FOREIGN KEY (auto_id) REFERENCES requests (id)
     )''')
     
     conn.commit()
@@ -114,6 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_msg, parse_mode='Markdown')
 
 async def ritiro_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()  # Reset stato
     context.user_data['state'] = 'ritiro_targa'
     await update.message.reply_text("🚗 *RITIRO AUTO*\n\nInserisci la *TARGA* del veicolo:", parse_mode='Markdown')
 
@@ -255,7 +257,7 @@ async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def modifica_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('carvalet.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id, targa, cognome, stanza FROM auto WHERE stato != "uscita" ORDER BY stanza')
+    cursor.execute('SELECT id, targa, cognome, stanza, tipo_auto, numero_chiave FROM auto WHERE stato != "uscita" ORDER BY stanza')
     auto_list = cursor.fetchall()
     conn.close()
     
@@ -265,8 +267,10 @@ async def modifica_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = []
     for auto in auto_list:
+        tipo_text = f" ({auto[4]})" if auto[4] else ""
+        chiave_text = f" - Chiave: {auto[5]}" if auto[5] else ""
         keyboard.append([InlineKeyboardButton(
-            f"Stanza {auto[3]} - {auto[1]} ({auto[2]})", 
+            f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){tipo_text}{chiave_text}", 
             callback_data=f"modifica_{auto[0]}"
         )])
     
@@ -332,18 +336,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
     if state == 'ritiro_targa':
-        context.user_data['targa'] = text.upper()
+        context.user_data['targa'] = text.upper().strip()
         context.user_data['state'] = 'ritiro_cognome'
         await update.message.reply_text("👤 Inserisci il *COGNOME* del cliente:", parse_mode='Markdown')
     
     elif state == 'ritiro_cognome':
-        context.user_data['cognome'] = text
+        context.user_data['cognome'] = text.strip()
         context.user_data['state'] = 'ritiro_stanza'
         await update.message.reply_text("🏨 Inserisci il numero *STANZA* (0-999):", parse_mode='Markdown')
     
     elif state == 'ritiro_stanza':
         try:
-            stanza = int(text)
+            stanza = int(text.strip())
             if 0 <= stanza <= 999:
                 context.user_data['stanza'] = stanza
                 
@@ -366,36 +370,68 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Inserisci un numero valido per la stanza:")
     
     elif state == 'ritiro_chiave':
-        try:
-            chiave = int(text)
-            if 0 <= chiave <= 999:
-                context.user_data['numero_chiave'] = chiave
-                context.user_data['state'] = 'ritiro_note'
-                await update.message.reply_text("📝 Inserisci eventuali *NOTE* (o scrivi 'skip' per saltare):", parse_mode='Markdown')
-            else:
-                await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999:")
-        except ValueError:
-            await update.message.reply_text("❌ Inserisci un numero valido per la chiave:")
+        if text.lower().strip() == 'skip':
+            context.user_data['numero_chiave'] = None
+            context.user_data['state'] = 'ritiro_note'
+            await update.message.reply_text("📝 Inserisci eventuali *NOTE* (o scrivi 'skip' per saltare):", parse_mode='Markdown')
+        else:
+            try:
+                chiave = int(text.strip())
+                if 0 <= chiave <= 999:
+                    context.user_data['numero_chiave'] = chiave
+                    context.user_data['state'] = 'ritiro_note'
+                    await update.message.reply_text("📝 Inserisci eventuali *NOTE* (o scrivi 'skip' per saltare):", parse_mode='Markdown')
+                else:
+                    await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'skip':")
+            except ValueError:
+                await update.message.reply_text("❌ Inserisci un numero valido per la chiave o 'skip':")
     
     elif state == 'ritiro_note':
-        note = text if text.lower() != 'skip' else None
+        note = text.strip() if text.lower().strip() != 'skip' else None
+        
+        # Salva i dati PRIMA di cancellarli
+        targa = context.user_data['targa']
+        cognome = context.user_data['cognome'] 
+        stanza = context.user_data['stanza']
+        tipo_auto = context.user_data.get('tipo_auto')
+        numero_chiave = context.user_data.get('numero_chiave')
         
         conn = sqlite3.connect('carvalet.db')
         cursor = conn.cursor()
         cursor.execute('''INSERT INTO auto (targa, cognome, stanza, tipo_auto, numero_chiave, note) 
                          VALUES (?, ?, ?, ?, ?, ?)''',
-                      (context.user_data['targa'], context.user_data['cognome'], context.user_data['stanza'],
-                       context.user_data.get('tipo_auto'), context.user_data.get('numero_chiave'), note))
+                      (targa, cognome, stanza, tipo_auto, numero_chiave, note))
         auto_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
+        # Pulisci stato DOPO aver salvato
         context.user_data.clear()
         
-        await update.message.reply_text(f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 {context.user_data.get('targa', 'N/A')}\n👤 {context.user_data.get('cognome', 'N/A')}\n🏨 Stanza: {context.user_data.get('stanza', 'N/A')}", parse_mode='Markdown')
+        # Crea messaggio di recap completo
+        recap_msg = f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
+        
+        if tipo_auto:
+            recap_msg += f"\n🚗 Tipo: {tipo_auto}"
+        if numero_chiave is not None:
+            recap_msg += f"\n🔑 Chiave: {numero_chiave}"
+        if note:
+            recap_msg += f"\n📝 Note: {note}"
+        
+        recap_msg += f"\n\n📅 Richiesta del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
+        
+        await update.message.reply_text(recap_msg, parse_mode='Markdown')
     
     elif state == 'upload_foto':
-        await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
+        if text.lower().strip() == 'fine':
+            auto_id = context.user_data.get('foto_auto_id')
+            context.user_data.clear()
+            
+            if auto_id:
+                auto = get_auto_by_id(auto_id)
+                await update.message.reply_text(f"📷 *Upload foto completato!*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
     
     else:
         await update.message.reply_text("❓ Comando non riconosciuto. Usa /start per vedere tutti i comandi.")
@@ -411,9 +447,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cursor.execute('INSERT INTO foto (auto_id, file_id) VALUES (?, ?)', (auto_id, file_id))
             cursor.execute('UPDATE auto SET foto_count = foto_count + 1 WHERE id = ?', (auto_id,))
             conn.commit()
+            
+            cursor.execute('SELECT foto_count FROM auto WHERE id = ?', (auto_id,))
+            foto_count = cursor.fetchone()[0]
             conn.close()
             
-            await update.message.reply_text("📷 Foto salvata! Invia altre foto o scrivi 'fine' per terminare.")
+            await update.message.reply_text(f"📷 Foto #{foto_count} salvata! Invia altre foto o scrivi 'fine' per terminare.")
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -459,21 +498,24 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         update_auto_stato(auto_id, 'ritiro')
         
         auto = get_auto_by_id(auto_id)
-        await query.edit_message_text(f"✅ *RITIRO AVVIATO!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n⏰ Tempo stimato: {minuti} minuti", parse_mode='Markdown')
+        await query.edit_message_text(f"✅ *RITIRO AVVIATO!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
     
     elif data.startswith('park_'):
         auto_id = int(data.split('_')[1])
         update_auto_stato(auto_id, 'parcheggiata')
         
         auto = get_auto_by_id(auto_id)
-        await query.edit_message_text(f"🅿️ *AUTO PARCHEGGIATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n📅 Inizio conteggio giorni", parse_mode='Markdown')
+        await query.edit_message_text(f"🅿️ *AUTO PARCHEGGIATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Inizio conteggio giorni\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
     
     elif data.startswith('exit_'):
         auto_id = int(data.split('_')[1])
         update_auto_stato(auto_id, 'riconsegna')
         
         auto = get_auto_by_id(auto_id)
-        await query.edit_message_text(f"🚪 *AUTO IN RICONSEGNA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+        giorni = calcola_giorni_parcheggio(auto[9]) if auto[9] else 0
+        sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
+        
+        await query.edit_message_text(f"🚪 *AUTO IN RICONSEGNA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
     
     elif data.startswith('riconsegna_'):
         auto_id = int(data.split('_')[1])
@@ -484,7 +526,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             update_auto_stato(auto_id, 'riconsegna', giorni)
             
             sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
-            await query.edit_message_text(f"🚚 *RICONSEGNA RICHIESTA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n📅 Parcheggiata {giorni} giorni{sconto_text}", parse_mode='Markdown')
+            await query.edit_message_text(f"🚚 *RICONSEGNA RICHIESTA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
     
     elif data.startswith('partenza_'):
         auto_id = int(data.split('_')[1])
@@ -493,10 +535,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if auto[9]:  # data_park
             giorni = calcola_giorni_parcheggio(auto[9])
             update_auto_stato(auto_id, 'uscita', giorni)
+            sconto_text = f" ({giorni} giorni" + (" - SCONTO ✨)" if giorni >= 10 else ")")
         else:
             update_auto_stato(auto_id, 'uscita')
+            sconto_text = ""
         
-        await query.edit_message_text(f"🏁 *PARTENZA CONFERMATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n✅ Auto uscita definitivamente", parse_mode='Markdown')
+        await query.edit_message_text(f"🏁 *PARTENZA CONFERMATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{sconto_text}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
     
     elif data.startswith('foto_'):
         auto_id = int(data.split('_')[1])
@@ -504,7 +548,25 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data['foto_auto_id'] = auto_id
         
         auto = get_auto_by_id(auto_id)
-        await query.edit_message_text(f"📷 *CARICA FOTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n\nInvia le foto dell'auto (una o più). Scrivi 'fine' quando terminato.", parse_mode='Markdown')
+        await query.edit_message_text(f"📷 *CARICA FOTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\nInvia le foto dell'auto (una o più). Scrivi 'fine' quando terminato.", parse_mode='Markdown')
+    
+    elif data.startswith('modifica_'):
+        auto_id = int(data.split('_')[1])
+        auto = get_auto_by_id(auto_id)
+        
+        keyboard = [
+            [InlineKeyboardButton("🚗 Modifica Tipo Auto", callback_data=f"mod_tipo_{auto_id}")],
+            [InlineKeyboardButton("🔑 Modifica Chiave", callback_data=f"mod_chiave_{auto_id}")],
+            [InlineKeyboardButton("📝 Modifica Note", callback_data=f"mod_note_{auto_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        tipo_text = f"\n🚗 Tipo: {auto[4]}" if auto[4] else "\n🚗 Tipo: Non specificato"
+        chiave_text = f"\n🔑 Chiave: {auto[5]}" if auto[5] else "\n🔑 Chiave: Non assegnata"
+        note_text = f"\n📝 Note: {auto[6]}" if auto[6] else "\n📝 Note: Nessuna"
+        
+        await query.edit_message_text(f"✏️ *MODIFICA AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{tipo_text}{chiave_text}{note_text}\n\nCosa vuoi modificare?", 
+                                    reply_markup=reply_markup, parse_mode='Markdown')
 
 def main():
     TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -527,6 +589,7 @@ def main():
     
     print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
     print("✅ Sistema gestione auto hotel attivo")
+    print("🔧 v3.1: Fix recap richiesta, messaggi migliorati")
     
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
