@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CarValetBOT v3.5 - Sistema Gestione Auto Hotel
-By Claude AI & ZibronCloud
+By Claude AI & Zibroncloud
 Data: 12 Luglio 2025
 Changelog v3.5: Fix validazione targhe internazionali, menu semplificato
 """
@@ -176,15 +176,15 @@ def calcola_giorni_parcheggio(data_park):
         return 0
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    welcome_msg = f"""🚗 *{BOT_NAME} v{BOT_VERSION}*
-*By Claude AI & Zibroncloud*
+    welcome_msg = f"""🚗 {BOT_NAME} v{BOT_VERSION}
+By Claude AI & Zibroncloud
 
-🏨 *COMANDI HOTEL:*
+🏨 COMANDI HOTEL:
 /ritiro - Richiesta ritiro auto
 /riconsegna - Lista auto per riconsegna  
 /partenza - Riconsegna finale (uscita)
 
-🚗 *COMANDI VALET:*
+🚗 COMANDI VALET:
 /incorso - Ritiro in corso
 /foto - Carica foto auto
 /vedi_foto - Visualizza foto auto
@@ -192,30 +192,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /exit - Auto in riconsegna
 /modifica - Modifica dati auto
 
-📊 *COMANDI STATISTICHE:*
+📊 COMANDI STATISTICHE:
 /conta_auto - Conteggio giornaliero
 /lista_auto - Auto in parcheggio
 
-❓ *COMANDI AIUTO:*
+❓ COMANDI AIUTO:
 /help - Mostra questa guida
 /annulla - Annulla operazione in corso
 
-💡 *TIPI AUTO:* Compatta, SUV, Elettrica, VAN, Gancio traino, LUXURY
-🔑 *NUMERI:* Stanze e chiavi da 0 a 999
-🌍 *TARGHE:* Italiane ed europee accettate"""
+💡 TIPI AUTO: Compatta, SUV, Elettrica, VAN, Gancio traino, LUXURY
+🔑 NUMERI: Stanze e chiavi da 0 a 999
+🌍 TARGHE: Italiane ed europee accettate"""
 
-    await update.message.reply_text(welcome_msg, parse_mode='Markdown')
+    await update.message.reply_text(welcome_msg)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /help - Mostra la guida completa"""
-    help_msg = f"""🚗 *{BOT_NAME} v{BOT_VERSION} - GUIDA COMPLETA*
+    help_msg = f"""🚗 {BOT_NAME} v{BOT_VERSION} - GUIDA COMPLETA
 
-🏨 *COMANDI HOTEL:*
+🏨 COMANDI HOTEL:
 /ritiro - Crea nuova richiesta ritiro auto
 /riconsegna - Seleziona auto da riconsegnare
 /partenza - Conferma partenza definitiva
 
-🚗 *COMANDI VALET:*
+🚗 COMANDI VALET:
 /incorso - Inizia ritiro auto richiesta
 /foto - Carica foto dell'auto
 /vedi_foto - Visualizza foto per auto/cliente
@@ -223,35 +223,35 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /exit - Metti auto in riconsegna
 /modifica - Modifica dati auto esistente
 
-📊 *COMANDI STATISTICHE:*
+📊 COMANDI STATISTICHE:
 /conta_auto - Statistiche giornaliere
 /lista_auto - Elenco auto parcheggiate
 
-❓ *COMANDI AIUTO:*
+❓ COMANDI AIUTO:
 /start - Messaggio di benvenuto
 /help - Questa guida
 /annulla - Annulla operazione in corso
 
-📋 *WORKFLOW TIPICO:*
+📋 WORKFLOW TIPICO:
 1️⃣ Hotel: /ritiro (inserisci targa, cognome, stanza)
 2️⃣ Valet: /incorso (seleziona auto e tempo)
 3️⃣ Valet: /park (conferma parcheggio)
 4️⃣ Hotel: /riconsegna (richiesta riconsegna)
 5️⃣ Hotel: /partenza (conferma uscita)
 
-🎯 *STATI AUTO:*
-*richiesta* - Appena creata
-*ritiro* - Valet sta ritirando
-*parcheggiata* - In parcheggio
-*riconsegna* - In attesa riconsegna
-*uscita* - Partita definitivamente
+🎯 STATI AUTO:
+richiesta - Appena creata
+ritiro - Valet sta ritirando
+parcheggiata - In parcheggio
+riconsegna - In attesa riconsegna
+uscita - Partita definitivamente
 
-💡 *TIPI AUTO:* Compatta, SUV, Elettrica, VAN, Gancio traino, LUXURY
-🔑 *RANGE NUMERI:* Stanze e chiavi da 0 a 999
-🌍 *TARGHE ACCETTATE:* Italiane (XX123XX), Europee, con trattini
-✨ *SCONTO AUTOMATICO:* Dopo 10+ giorni di parcheggio"""
+💡 TIPI AUTO: Compatta, SUV, Elettrica, VAN, Gancio traino, LUXURY
+🔑 RANGE NUMERI: Stanze e chiavi da 0 a 999
+🌍 TARGHE ACCETTATE: Italiane (XX123XX), Europee, con trattini
+✨ SCONTO AUTOMATICO: Dopo 10+ giorni di parcheggio"""
 
-    await update.message.reply_text(help_msg, parse_mode='Markdown')
+    await update.message.reply_text(help_msg)
 
 async def annulla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /annulla - Annulla operazione in corso"""
@@ -268,9 +268,9 @@ async def annulla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             operazione = "operazione"
         
         context.user_data.clear()
-        await update.message.reply_text(f"❌ *{operazione.title()} annullata*\n\nPuoi iniziare una nuova operazione quando vuoi.", parse_mode='Markdown')
+        await update.message.reply_text(f"❌ {operazione.title()} annullata\n\nPuoi iniziare una nuova operazione quando vuoi.")
     else:
-        await update.message.reply_text("ℹ️ *Nessuna operazione in corso*\n\nUsa `/help` per vedere tutti i comandi disponibili.", parse_mode='Markdown')
+        await update.message.reply_text("ℹ️ Nessuna operazione in corso\n\nUsa /help per vedere tutti i comandi disponibili.")
 
 async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /vedi_foto - Mostra foto per auto specifica"""
@@ -278,7 +278,7 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         auto_con_foto = get_auto_con_foto()
         
         if not auto_con_foto:
-            await update.message.reply_text("📷 *Nessuna foto disponibile*\n\nNon ci sono auto con foto caricate.", parse_mode='Markdown')
+            await update.message.reply_text("📷 Nessuna foto disponibile\n\nNon ci sono auto con foto caricate.")
             return
         
         stati_order = ['parcheggiata', 'riconsegna', 'ritiro', 'richiesta', 'uscita']
@@ -313,8 +313,8 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("📷 *VISUALIZZA FOTO AUTO*\n\nSeleziona l'auto per vedere le sue foto:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("📷 VISUALIZZA FOTO AUTO\n\nSeleziona l'auto per vedere le sue foto:", 
+                                       reply_markup=reply_markup)
     
     except Exception as e:
         logging.error(f"Errore comando vedi_foto: {e}")
@@ -323,7 +323,7 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ritiro_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['state'] = 'ritiro_targa'
-    await update.message.reply_text("🚗 *RITIRO AUTO*\n\nInserisci la *TARGA* del veicolo:", parse_mode='Markdown')
+    await update.message.reply_text("🚗 RITIRO AUTO\n\nInserisci la TARGA del veicolo:")
 
 async def riconsegna_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -334,7 +334,7 @@ async def riconsegna_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto in parcheggio*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto in parcheggio")
             return
         
         keyboard = []
@@ -346,8 +346,8 @@ async def riconsegna_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🚚 *RICONSEGNA AUTO*\n\nSeleziona l'auto:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("🚚 RICONSEGNA AUTO\n\nSeleziona l'auto:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando riconsegna: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -361,7 +361,7 @@ async def partenza_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto in riconsegna*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto in riconsegna")
             return
         
         keyboard = []
@@ -373,8 +373,8 @@ async def partenza_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🏁 *PARTENZA DEFINITIVA*\n\nSeleziona l'auto:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("🏁 PARTENZA DEFINITIVA\n\nSeleziona l'auto:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando partenza: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -388,7 +388,7 @@ async def incorso_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna richiesta di ritiro*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna richiesta di ritiro")
             return
         
         keyboard = []
@@ -400,8 +400,8 @@ async def incorso_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("⚙️ *RITIRO IN CORSO*\n\nSeleziona l'auto da ritirare:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("⚙️ RITIRO IN CORSO\n\nSeleziona l'auto da ritirare:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando incorso: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -415,7 +415,7 @@ async def foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto disponibile per foto*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto disponibile per foto")
             return
         
         keyboard = []
@@ -426,8 +426,8 @@ async def foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("📷 *CARICA FOTO*\n\nSeleziona l'auto:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("📷 CARICA FOTO\n\nSeleziona l'auto:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando foto: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -441,7 +441,7 @@ async def park_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto in ritiro*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto in ritiro")
             return
         
         keyboard = []
@@ -452,8 +452,8 @@ async def park_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🅿️ *CONFERMA PARCHEGGIO*\n\nSeleziona l'auto parcheggiata:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("🅿️ CONFERMA PARCHEGGIO\n\nSeleziona l'auto parcheggiata:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando park: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -467,7 +467,7 @@ async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto in parcheggio*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto in parcheggio")
             return
         
         keyboard = []
@@ -478,8 +478,8 @@ async def exit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("🚪 *AUTO IN RICONSEGNA*\n\nSeleziona l'auto:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("🚪 AUTO IN RICONSEGNA\n\nSeleziona l'auto:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando exit: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -493,7 +493,7 @@ async def modifica_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("📋 *Nessuna auto da modificare*", parse_mode='Markdown')
+            await update.message.reply_text("📋 Nessuna auto da modificare")
             return
         
         keyboard = []
@@ -506,8 +506,8 @@ async def modifica_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("✏️ *MODIFICA AUTO*\n\nSeleziona l'auto da modificare:", 
-                                       reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text("✏️ MODIFICA AUTO\n\nSeleziona l'auto da modificare:", 
+                                       reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"Errore comando modifica: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -532,13 +532,13 @@ async def conta_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         oggi_formattato = datetime.now().strftime('%d %B %Y')
         
-        messaggio = f"""📊 *STATISTICHE {oggi_formattato}*
+        messaggio = f"""📊 STATISTICHE {oggi_formattato}
 
-🚗 Auto uscite oggi: *{uscite_oggi}*
-🚗 Auto entrate oggi: *{entrate_oggi}*  
-🅿️ Auto in parcheggio: *{in_parcheggio}*"""
+🚗 Auto uscite oggi: {uscite_oggi}
+🚗 Auto entrate oggi: {entrate_oggi}  
+🅿️ Auto in parcheggio: {in_parcheggio}"""
 
-        await update.message.reply_text(messaggio, parse_mode='Markdown')
+        await update.message.reply_text(messaggio)
     except Exception as e:
         logging.error(f"Errore comando conta_auto: {e}")
         await update.message.reply_text("❌ Errore durante il conteggio delle auto")
@@ -552,10 +552,10 @@ async def lista_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         conn.close()
         
         if not auto_list:
-            await update.message.reply_text("🅿️ *Nessuna auto in parcheggio*", parse_mode='Markdown')
+            await update.message.reply_text("🅿️ Nessuna auto in parcheggio")
             return
         
-        messaggio = "🅿️ *AUTO IN PARCHEGGIO:*\n\n"
+        messaggio = "🅿️ AUTO IN PARCHEGGIO:\n\n"
         
         for auto in auto_list:
             stanza, cognome, targa, chiave, data_park = auto
@@ -579,7 +579,7 @@ async def lista_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if giorni >= 10:
                 messaggio += f"     ({giorni} giorni)\n"
         
-        await update.message.reply_text(messaggio, parse_mode='Markdown')
+        await update.message.reply_text(messaggio)
     except Exception as e:
         logging.error(f"Errore comando lista_auto: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento della lista")
@@ -603,21 +603,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state == 'ritiro_targa':
             targa = text.upper()
             if not validate_targa(targa):
-                await update.message.reply_text("❌ *Formato targa non valido!*\n\nInserisci una targa valida:\n• Italiana: XX123XX\n• Europea: ABC123, 123ABC\n• Con trattini: XX-123-XX", parse_mode='Markdown')
+                await update.message.reply_text("❌ Formato targa non valido!\n\nInserisci una targa valida:\n• Italiana: XX123XX\n• Europea: ABC123, 123ABC\n• Con trattini: XX-123-XX")
                 return
             
             context.user_data['targa'] = targa
             context.user_data['state'] = 'ritiro_cognome'
-            await update.message.reply_text("👤 Inserisci il *COGNOME* del cliente:", parse_mode='Markdown')
+            await update.message.reply_text("👤 Inserisci il COGNOME del cliente:")
         
         elif state == 'ritiro_cognome':
             if not validate_cognome(text):
-                await update.message.reply_text("❌ *Cognome non valido!*\n\nUsa solo lettere, spazi e apostrofi:", parse_mode='Markdown')
+                await update.message.reply_text("❌ Cognome non valido!\n\nUsa solo lettere, spazi e apostrofi:")
                 return
             
             context.user_data['cognome'] = text.strip()
             context.user_data['state'] = 'ritiro_stanza'
-            await update.message.reply_text("🏨 Inserisci il numero *STANZA* (0-999):", parse_mode='Markdown')
+            await update.message.reply_text("🏨 Inserisci il numero STANZA (0-999):")
         
         elif state == 'ritiro_stanza':
             try:
@@ -636,8 +636,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
-                    await update.message.reply_text("🚗 *TIPO AUTO* (opzionale):", 
-                                                   reply_markup=reply_markup, parse_mode='Markdown')
+                    await update.message.reply_text("🚗 TIPO AUTO (opzionale):", 
+                                                   reply_markup=reply_markup)
                 else:
                     await update.message.reply_text("❌ Numero stanza non valido! Inserisci un numero da 0 a 999:")
             except ValueError:
@@ -647,14 +647,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if text.lower() == 'skip':
                 context.user_data['numero_chiave'] = None
                 context.user_data['state'] = 'ritiro_note'
-                await update.message.reply_text("📝 Inserisci eventuali *NOTE* (o scrivi 'skip' per saltare):", parse_mode='Markdown')
+                await update.message.reply_text("📝 Inserisci eventuali NOTE (o scrivi 'skip' per saltare):")
             else:
                 try:
                     chiave = int(text)
                     if 0 <= chiave <= 999:
                         context.user_data['numero_chiave'] = chiave
                         context.user_data['state'] = 'ritiro_note'
-                        await update.message.reply_text("📝 Inserisci eventuali *NOTE* (o scrivi 'skip' per saltare):", parse_mode='Markdown')
+                        await update.message.reply_text("📝 Inserisci eventuali NOTE (o scrivi 'skip' per saltare):")
                     else:
                         await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'skip':")
                 except ValueError:
@@ -681,7 +681,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 context.user_data.clear()
                 
-                recap_msg = f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
+                recap_msg = f"✅ RICHIESTA CREATA!\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
                 
                 if tipo_auto:
                     recap_msg += f"\n🚗 Tipo: {tipo_auto}"
@@ -692,7 +692,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 recap_msg += f"\n\n📅 Richiesta del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
                 
-                await update.message.reply_text(recap_msg, parse_mode='Markdown')
+                await update.message.reply_text(recap_msg)
                 
             except Exception as e:
                 logging.error(f"Errore salvataggio richiesta: {e}")
@@ -707,7 +707,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if auto_id:
                     auto = get_auto_by_id(auto_id)
                     if auto:
-                        await update.message.reply_text(f"📷 *Upload foto completato!*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                        await update.message.reply_text(f"📷 Upload foto completato!\n\n🚗 {auto[1]} - Stanza {auto[3]}")
             else:
                 await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
         
@@ -732,7 +732,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if update_auto_field(auto_id, 'numero_chiave', value):
                     auto = get_auto_by_id(auto_id)
                     text_result = f"rimossa" if value is None else f"impostata a {value}"
-                    await update.message.reply_text(f"✅ *Chiave {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                    await update.message.reply_text(f"✅ Chiave {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
                 else:
                     await update.message.reply_text("❌ Errore durante l'aggiornamento")
                 
@@ -747,14 +747,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if update_auto_field(auto_id, 'note', value):
                     auto = get_auto_by_id(auto_id)
                     text_result = "rimosse" if value is None else "aggiornate"
-                    await update.message.reply_text(f"✅ *Note {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                    await update.message.reply_text(f"✅ Note {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
                 else:
                     await update.message.reply_text("❌ Errore durante l'aggiornamento")
                 
                 context.user_data.clear()
         
         else:
-            await update.message.reply_text("❓ *Comando non riconosciuto*\n\nUsa `/help` per vedere tutti i comandi disponibili.", parse_mode='Markdown')
+            await update.message.reply_text("❓ Comando non riconosciuto\n\nUsa /help per vedere tutti i comandi disponibili.")
     
     except Exception as e:
         logging.error(f"Errore handle_message: {e}")
@@ -808,7 +808,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 context.user_data['tipo_auto'] = tipo_map.get(tipo)
             
             context.user_data['state'] = 'ritiro_chiave'
-            await query.edit_message_text("🔑 Inserisci il *NUMERO CHIAVE* (0-999) o scrivi 'skip' per saltare:", parse_mode='Markdown')
+            await query.edit_message_text("🔑 Inserisci il NUMERO CHIAVE (0-999) o scrivi 'skip' per saltare:")
         
         elif data.startswith('incorso_'):
             auto_id = int(data.split('_')[1])
@@ -824,7 +824,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text("⏰ *TEMPO STIMATO RITIRO:*", reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text("⏰ TEMPO STIMATO RITIRO:", reply_markup=reply_markup)
         
         elif data.startswith('tempo_'):
             parts = data.split('_')
@@ -837,7 +837,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             
             if update_auto_stato(auto_id, 'ritiro'):
-                await query.edit_message_text(f"✅ *RITIRO AVVIATO!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                await query.edit_message_text(f"✅ RITIRO AVVIATO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
             else:
                 await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -849,7 +849,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             
             if update_auto_stato(auto_id, 'parcheggiata'):
-                await query.edit_message_text(f"🅿️ *AUTO PARCHEGGIATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Inizio conteggio giorni\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Inizio conteggio giorni\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
             else:
                 await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -864,7 +864,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             if update_auto_stato(auto_id, 'riconsegna'):
                 sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
-                await query.edit_message_text(f"🚪 *AUTO IN RICONSEGNA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                await query.edit_message_text(f"🚪 AUTO IN RICONSEGNA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
             else:
                 await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -879,7 +879,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 giorni = calcola_giorni_parcheggio(auto[9])
                 if update_auto_stato(auto_id, 'riconsegna', giorni):
                     sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
-                    await query.edit_message_text(f"🚚 *RICONSEGNA RICHIESTA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                    await query.edit_message_text(f"🚚 RICONSEGNA RICHIESTA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📅 Parcheggiata {giorni} giorni{sconto_text}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
                 else:
                     await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -894,12 +894,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 giorni = calcola_giorni_parcheggio(auto[9])
                 if update_auto_stato(auto_id, 'uscita', giorni):
                     sconto_text = f" ({giorni} giorni" + (" - SCONTO ✨)" if giorni >= 10 else ")")
-                    await query.edit_message_text(f"🏁 *PARTENZA CONFERMATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{sconto_text}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                    await query.edit_message_text(f"🏁 PARTENZA CONFERMATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{sconto_text}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
                 else:
                     await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
             else:
                 if update_auto_stato(auto_id, 'uscita'):
-                    await query.edit_message_text(f"🏁 *PARTENZA CONFERMATA!*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}", parse_mode='Markdown')
+                    await query.edit_message_text(f"🏁 PARTENZA CONFERMATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
                 else:
                     await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -913,7 +913,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data['state'] = 'upload_foto'
             context.user_data['foto_auto_id'] = auto_id
             
-            await query.edit_message_text(f"📷 *CARICA FOTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\nInvia le foto dell'auto (una o più). Scrivi 'fine' quando terminato.", parse_mode='Markdown')
+            await query.edit_message_text(f"📷 CARICA FOTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\nInvia le foto dell'auto (una o più). Scrivi 'fine' quando terminato.")
         
         elif data.startswith('modifica_'):
             auto_id = int(data.split('_')[1])
@@ -933,8 +933,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             chiave_text = f"\n🔑 Chiave: {auto[5]}" if auto[5] else "\n🔑 Chiave: Non assegnata"
             note_text = f"\n📝 Note: {auto[6]}" if auto[6] else "\n📝 Note: Nessuna"
             
-            await query.edit_message_text(f"✏️ *MODIFICA AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{tipo_text}{chiave_text}{note_text}\n\nCosa vuoi modificare?", 
-                                        reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text(f"✏️ MODIFICA AUTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}{tipo_text}{chiave_text}{note_text}\n\nCosa vuoi modificare?", 
+                                        reply_markup=reply_markup)
         
         elif data.startswith('mostra_foto_'):
             auto_id = int(data.split('_')[2])
@@ -945,10 +945,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             
             foto_list = get_foto_by_auto_id(auto_id)
             if not foto_list:
-                await query.edit_message_text(f"📷 *Nessuna foto trovata*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}", parse_mode='Markdown')
+                await query.edit_message_text(f"📷 Nessuna foto trovata\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}")
                 return
             
-            await query.edit_message_text(f"📷 *FOTO AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📊 Stato: {auto[7]}\n📷 Totale foto: {len(foto_list)}", parse_mode='Markdown')
+            await query.edit_message_text(f"📷 FOTO AUTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📊 Stato: {auto[7]}\n📷 Totale foto: {len(foto_list)}")
             
             max_foto_per_invio = 10
             for i, foto in enumerate(foto_list):
@@ -987,8 +987,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(f"🚗 *MODIFICA TIPO AUTO*\n\n{auto[1]} - Stanza {auto[3]}\nTipo attuale: {auto[4] or 'Non specificato'}\n\nSeleziona nuovo tipo:", 
-                                        reply_markup=reply_markup, parse_mode='Markdown')
+            await query.edit_message_text(f"🚗 MODIFICA TIPO AUTO\n\n{auto[1]} - Stanza {auto[3]}\nTipo attuale: {auto[4] or 'Non specificato'}\n\nSeleziona nuovo tipo:", 
+                                        reply_markup=reply_markup)
         
         elif data.startswith('set_tipo_'):
             parts = data.split('_')
@@ -1016,7 +1016,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 text_result = f"impostato a {value}"
             
             if update_auto_field(auto_id, 'tipo_auto', value):
-                await query.edit_message_text(f"✅ *Tipo auto {text_result}*\n\n🚗 {auto[1]} - Stanza {auto[3]}", parse_mode='Markdown')
+                await query.edit_message_text(f"✅ Tipo auto {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
             else:
                 await query.edit_message_text("❌ Errore durante l'aggiornamento")
         
@@ -1028,7 +1028,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             
             context.user_data['state'] = f'mod_chiave_{auto_id}'
-            await query.edit_message_text(f"🔑 *MODIFICA CHIAVE*\n\n{auto[1]} - Stanza {auto[3]}\nChiave attuale: {auto[5] or 'Non assegnata'}\n\nInserisci nuovo numero chiave (0-999) o scrivi 'rimuovi':", parse_mode='Markdown')
+            await query.edit_message_text(f"🔑 MODIFICA CHIAVE\n\n{auto[1]} - Stanza {auto[3]}\nChiave attuale: {auto[5] or 'Non assegnata'}\n\nInserisci nuovo numero chiave (0-999) o scrivi 'rimuovi':")
         
         elif data.startswith('mod_note_'):
             auto_id = int(data.split('_')[2])
@@ -1038,7 +1038,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             
             context.user_data['state'] = f'mod_note_{auto_id}'
-            await query.edit_message_text(f"📝 *MODIFICA NOTE*\n\n{auto[1]} - Stanza {auto[3]}\nNote attuali: {auto[6] or 'Nessuna'}\n\nInserisci nuove note o scrivi 'rimuovi':", parse_mode='Markdown')
+            await query.edit_message_text(f"📝 MODIFICA NOTE\n\n{auto[1]} - Stanza {auto[3]}\nNote attuali: {auto[6] or 'Nessuna'}\n\nInserisci nuove note o scrivi 'rimuovi':")
     
     except Exception as e:
         logging.error(f"Errore handle_callback_query: {e}")
