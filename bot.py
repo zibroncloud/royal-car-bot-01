@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CarValetBOT v3.5 - Sistema Gestione Auto Hotel
-By Claude AI & Zibroncloud
+By Claude AI & ZibronCloud
 Data: 12 Luglio 2025
 Changelog v3.5: Fix validazione targhe internazionali, menu semplificato
 """
