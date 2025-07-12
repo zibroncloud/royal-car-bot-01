@@ -1,3 +1,16 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+RoyalCarBot01 - Bot Telegram Car Valet Service
+Versione: 2.0.0
+Data: 12 Luglio 2025
+Autore: Claude AI + zibroncloud
+
+Changelog:
+v2.0.0 - Aggiunta gestione tempi ritiro/riconsegna, /help, /annulla, notifiche con orari
+v1.0.0 - Versione base con gestione richieste e foto
+"""
+
 import os
 import logging
 import sqlite3
@@ -5,6 +18,10 @@ from datetime import datetime, timedelta
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import asyncio
+
+# Versione Bot
+BOT_VERSION = "2.0.0"
+BOT_NAME = "RoyalCarBot01"
 
 # Configurazione logging
 logging.basicConfig(
@@ -219,7 +236,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not role:
         await update.message.reply_text(
-            "🚗 *Benvenuto in RoyalCarBot01!*\n\n"
+            f"🚗 *{BOT_NAME} v{BOT_VERSION}*\n\n"
             "Per utilizzare questo bot, devi essere registrato.\n\n"
             "📝 *Comandi disponibili:*\n"
             "• `/register <nome> reception` - Registrati come Reception\n"
@@ -230,7 +247,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    welcome_msg = f"🚗 *Benvenuto {user.first_name}!*\n\n"
+    welcome_msg = f"🚗 *{BOT_NAME} v{BOT_VERSION}*\n"
+    welcome_msg += f"*Benvenuto {user.first_name}!*\n\n"
     if role == 'reception':
         welcome_msg += "Sei connesso come *Reception*\n"
         welcome_msg += "Puoi creare nuove richieste e gestire tutto il servizio valet."
@@ -248,8 +266,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = get_user_role(update.effective_user.id)
     
     if not role:
-        help_text = """
-❓ *HELP - RoyalCarBot01*
+        help_text = f"""
+❓ *HELP - {BOT_NAME} v{BOT_VERSION}*
 
 📝 *Registrazione:*
 • `/register <nome> reception` - Registrati come Reception
@@ -1171,7 +1189,7 @@ if __name__ == '__main__':
     main()dButton(
             f"⚙️ Gestisci #{req[0]}", 
             callback_data=f"manage_{req[0]}"
-        )))
+        )])
     
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
