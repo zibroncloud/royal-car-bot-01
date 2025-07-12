@@ -236,6 +236,546 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not role:
         await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def show_new_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    requests = get_requests(stato='nuovo')
+    
+    if not requests:
+        await update.message.reply_text(
+            "🆕 *Nessuna nuova richiesta*\n\n"
+            "Al momento non ci sono richieste disponibili.",
+            parse_mode='Markdown'
+        )
+        return
+    
+    message = "🆕 *Nuove Richieste Disponibili*\n\n"
+    keyboard = []
+    
+    for req in requests:
+        message += f"🆔 *#{req[0]}* - {req[1]}\n"
+        message += f"👤 {req[2]} | 🏨 {req[3]}\n"
+        message += f"🔧 {req[4]}\n"
+        message += f"📅 {req[6][:16]}\n\n"
+        
+        keyboard.append([InlineKeyboardButton(
+            f"🚗 Prendi #{req[0]}", 
+            callback_data=f"assign_{req[0]}"
+        )])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        message, 
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+async def show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    
+    # Statistiche
+    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato = "nuovo"')
+    nuove = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato IN ("assegnato", "in_corso", "partito")')
+    in_corso = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato = "completato"')
+    completate = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM requests WHERE DATE(created_at) = DATE("now")')
+    oggi = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT COUNT(*) FROM requests')
+    totali = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    message = f"📊 *Dashboard {BOT_NAME} v{BOT_VERSION}*\n\n"
+    message += f"🆕 Richieste nuove: *{nuove}*\n"
+    message += f"⚙️ In lavorazione: *{in_corso}*\n"
+    message += f"✅ Completate: *{completate}*\n"
+    message += f"📅 Richieste oggi: *{oggi}*\n"
+    message += f"📈 Totale richieste: *{totali}*\n\n"
+    message += f"🕐 Ultimo aggiornamento: {datetime.now().strftime('%H:%M')}"
+    
+    await update.message.reply_text(message, parse_mode='Markdown')
+
+async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_id = update.effective_user.id
+    
+    # Gestione selezione servizio
+    if data.startswith('servizio_'):
+        servizio = data.replace('servizio_', '').replace('_', ' ').title()
+        request_data = context.user_data.get('request_data', {})
+        request_data['servizio'] = servizio
+        
+        # Crea la richiesta
+        request_id = create_request(
+            request_data['targa'],
+            request_data['cliente'],
+            request_data['camera'],
+            request_data['servizio'],
+            user_id
+        )
+        
+        # Reset stato
+        context.user_data['state'] = None
+        context.user_data['request_data'] = {}
+        
+        await query.edit_message_text(
+            f"✅ *Richiesta #{request_id} creata!*\n\n"
+            f"🚗 Targa: `{request_data['targa']}`\n"
+            f"👤 Cliente: {request_data['cliente']}\n"
+            f"🏨 Camera: {request_data['camera']}\n"
+            f"🔧 Servizio: {servizio}\n\n"
+            f"La richiesta è stata inviata al team valet! 🚀",
+            parse_mode='Markdown'
+        )
+        
+        # Notifica ai valet
+        await notify_valets(context, request_id, request_data)
+    
+    # Gestione presa in carico con scelta tempi
+    elif data.startswith('assign_'):
+        request_id = int(data.split('_')[1])
+        
+        keyboard = [
+            [InlineKeyboardButton("⏱️ Ritiro in 5 min ca.", callback_data=f"pickup_{request_id}_5")],
+            [InlineKeyboardButton("⏱️ Ritiro in 10 min ca.", callback_data=f"pickup_{request_id}_10")],
+            [InlineKeyboardButton("⏱️ Ritiro in 20 min ca.", callback_data=f"pickup_{request_id}_20")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"⏰ *Tempo stimato per il ritiro?*\n\n"
+            f"Richiesta #{request_id}\n"
+            f"Seleziona il tempo stimato per raggiungere l'hotel:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    # Gestione conferma ritiro con tempo
+    elif data.startswith('pickup_'):
+        parts = data.split('_')
+        request_id = int(parts[1])
+        minutes = parts[2]
+        
+        tempo_text = f"{minutes} min ca."
+        update_request_status(request_id, 'assegnato', user_id, tempo_ritiro=tempo_text)
+        
+        req = get_request_by_id(request_id)
+        
+        await query.edit_message_text(
+            f"✅ *Richiesta #{request_id} presa in carico!*\n\n"
+            f"⏰ Tempo stimato ritiro: *{tempo_text}*\n\n"
+            f"🚗 {req[1]} - {req[2]}\n"
+            f"🏨 Camera {req[3]}\n"
+            f"🔧 {req[4]}\n\n"
+            f"Ora puoi aggiornare lo stato quando parti dall'hotel.",
+            parse_mode='Markdown'
+        )
+        
+        # Notifica reception
+        await notify_reception_assignment(context, request_id, req, tempo_text)
+    
+    # Gestione richieste valet
+    elif data.startswith('manage_'):
+        request_id = int(data.split('_')[1])
+        req = get_request_by_id(request_id)
+        
+        if not req:
+            await query.edit_message_text("❌ Richiesta non trovata.")
+            return
+        
+        keyboard = []
+        
+        if req[5] == 'assegnato':
+            keyboard.extend([
+                [InlineKeyboardButton("🚗 Inizia Servizio", callback_data=f"status_{request_id}_in_corso")],
+                [InlineKeyboardButton("🏃‍♂️ Sono Partito", callback_data=f"status_{request_id}_partito")]
+            ])
+        elif req[5] == 'in_corso':
+            keyboard.append([InlineKeyboardButton("✅ Servizio Completato", callback_data=f"status_{request_id}_completato")])
+        elif req[5] == 'completato':
+            keyboard.append([InlineKeyboardButton("🚚 Richiedi Riconsegna", callback_data=f"request_delivery_{request_id}")])
+        
+        keyboard.append([InlineKeyboardButton("❌ Annulla Richiesta", callback_data=f"status_{request_id}_annullato")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        status_emoji = {
+            'assegnato': '👤', 'in_corso': '⚙️', 'partito': '🚗', 'completato': '✅'
+        }
+        
+        message = f"{status_emoji.get(req[5], '📋')} *Richiesta #{request_id}*\n\n"
+        message += f"🚗 Targa: `{req[1]}`\n"
+        message += f"👤 Cliente: {req[2]}\n"
+        message += f"🏨 Camera: {req[3]}\n"
+        message += f"🔧 Servizio: {req[4]}\n"
+        message += f"📊 Stato: {req[5].upper()}\n"
+        if req[9]:  # tempo_ritiro
+            message += f"⏰ Ritiro: {req[9]}\n"
+        if req[10]:  # tempo_riconsegna
+            message += f"🚚 Riconsegna: {req[10]}\n"
+        
+        await query.edit_message_text(
+            message,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    # Gestione cambio stato
+    elif data.startswith('status_'):
+        parts = data.split('_')
+        request_id = int(parts[1])
+        new_status = parts[2]
+        
+        update_request_status(request_id, new_status)
+        
+        status_names = {
+            'in_corso': 'In Corso ⚙️',
+            'partito': 'Partito 🚗',
+            'completato': 'Completato ✅',
+            'annullato': 'Annullato ❌'
+        }
+        
+        await query.edit_message_text(
+            f"✅ *Stato aggiornato!*\n\n"
+            f"Richiesta #{request_id}: {status_names[new_status]}\n\n"
+            f"⏰ Aggiornato alle {datetime.now().strftime('%H:%M')}"
+        )
+        
+        # Notifiche specifiche
+        if new_status == 'partito':
+            req = get_request_by_id(request_id)
+            await notify_reception_departure(context, request_id, req)
+        elif new_status == 'completato':
+            await notify_reception_completion(context, request_id)
+    
+    # Richiesta riconsegna dal valet
+    elif data.startswith('request_delivery_'):
+        request_id = int(data.split('_')[2])
+        
+        keyboard = [
+            [InlineKeyboardButton("🚚 Riconsegna in 10 min", callback_data=f"delivery_{request_id}_10")],
+            [InlineKeyboardButton("🚚 Riconsegna in 20 min", callback_data=f"delivery_{request_id}_20")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"🚚 *Richiesta Riconsegna*\n\n"
+            f"Quanto tempo ti serve per la riconsegna?",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    # Gestione riconsegna dal valet
+    elif data.startswith('delivery_'):
+        parts = data.split('_')
+        request_id = int(parts[1])
+        minutes = parts[2]
+        
+        tempo_text = f"{minutes} min ca."
+        update_request_status(request_id, 'in_riconsegna', tempo_riconsegna=tempo_text)
+        
+        req = get_request_by_id(request_id)
+        
+        await query.edit_message_text(
+            f"✅ *Riconsegna programmata!*\n\n"
+            f"🚚 Tempo stimato: *{tempo_text}*\n"
+            f"🚗 {req[1]} - {req[2]}\n"
+            f"🏨 Camera {req[3]}\n\n"
+            f"La reception è stata avvisata.",
+            parse_mode='Markdown'
+        )
+        
+        # Notifica reception
+        await notify_reception_delivery_time(context, request_id, req, tempo_text)
+    
+    # Conferma riconsegna da reception
+    elif data.startswith('confirm_delivery_'):
+        request_id = int(data.split('_')[2])
+        
+        update_request_status(request_id, 'riconsegnato')
+        
+        await query.edit_message_text(
+            f"✅ *Riconsegna confermata!*\n\n"
+            f"Richiesta #{request_id} completata con successo!\n"
+            f"⏰ Completata alle {datetime.now().strftime('%H:%M')}"
+        )
+
+async def notify_valets(context, request_id, request_data):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT telegram_id, name FROM users WHERE role = "valet" AND active = 1')
+    valets = cursor.fetchall()
+    conn.close()
+    
+    message = f"🆕 *Nuova Richiesta #{request_id}*\n\n"
+    message += f"🚗 Targa: `{request_data['targa']}`\n"
+    message += f"👤 Cliente: {request_data['cliente']}\n"
+    message += f"🏨 Camera: {request_data['camera']}\n"
+    message += f"🔧 Servizio: {request_data['servizio']}\n\n"
+    message += "Usa il menu '🆕 Richieste Nuove' per prendere in carico!"
+    
+    for valet_id, valet_name in valets:
+        try:
+            await context.bot.send_message(
+                chat_id=valet_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.error(f"Errore invio notifica a valet {valet_id}: {e}")
+
+async def notify_reception_assignment(context, request_id, req, tempo_text):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
+    reception_users = cursor.fetchall()
+    conn.close()
+    
+    message = f"👤 *Richiesta #{request_id} Assegnata*\n\n"
+    message += f"🚗 Targa: `{req[1]}`\n"
+    message += f"👤 Cliente: {req[2]}\n"
+    message += f"🏨 Camera: {req[3]}\n"
+    message += f"👨‍🔧 Valet: {req[14]}\n"
+    message += f"⏰ Tempo ritiro: {tempo_text}\n\n"
+    message += "Il valet raggiungerà l'hotel nel tempo indicato."
+    
+    for reception_id, in reception_users:
+        try:
+            await context.bot.send_message(
+                chat_id=reception_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
+
+async def notify_reception_departure(context, request_id, req):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
+    reception_users = cursor.fetchall()
+    conn.close()
+    
+    message = f"🚗 *Valet in Arrivo #{request_id}*\n\n"
+    message += f"🚗 Targa: `{req[1]}`\n"
+    message += f"👤 Cliente: {req[2]}\n"
+    message += f"🏨 Camera: {req[3]}\n"
+    message += f"👨‍🔧 Valet: {req[14]}\n"
+    message += f"⏰ Partito alle: {datetime.now().strftime('%H:%M')}\n\n"
+    message += "Il valet è in arrivo per il ritiro del veicolo!"
+    
+    for reception_id, in reception_users:
+        try:
+            await context.bot.send_message(
+                chat_id=reception_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
+
+async def notify_reception_completion(context, request_id):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT r.targa, r.cliente, r.camera, r.servizio, u.name
+        FROM requests r
+        LEFT JOIN users u ON r.assigned_to = u.telegram_id
+        WHERE r.id = ?
+    ''', (request_id,))
+    req = cursor.fetchone()
+    
+    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
+    reception_users = cursor.fetchall()
+    conn.close()
+    
+    if not req:
+        return
+    
+    message = f"✅ *Servizio Completato #{request_id}*\n\n"
+    message += f"🚗 Targa: `{req[0]}`\n"
+    message += f"👤 Cliente: {req[1]}\n"
+    message += f"🏨 Camera: {req[2]}\n"
+    message += f"🔧 Servizio: {req[3]}\n"
+    message += f"👨‍🔧 Valet: {req[4]}\n"
+    message += f"⏰ Completato alle: {datetime.now().strftime('%H:%M')}\n\n"
+    message += "Il veicolo è pronto! Usa '🚚 Richiedi Riconsegna' quando necessario."
+    
+    for reception_id, in reception_users:
+        try:
+            await context.bot.send_message(
+                chat_id=reception_id,
+                text=message,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
+
+async def notify_valet_for_delivery(context, req):
+    valet_id = None
+    
+    # Trova l'ID del valet dalla richiesta
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT assigned_to FROM requests WHERE id = ?', (req[0],))
+    result = cursor.fetchone()
+    if result:
+        valet_id = result[0]
+    conn.close()
+    
+    if not valet_id:
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ Messaggio Visualizzato", callback_data=f"delivery_ack_{req[0]}")],
+        [InlineKeyboardButton("🚚 Riconsegna in 10 min", callback_data=f"delivery_{req[0]}_10")],
+        [InlineKeyboardButton("🚚 Riconsegna in 20 min", callback_data=f"delivery_{req[0]}_20")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = f"🚚 *Richiesta Riconsegna #{req[0]}*\n\n"
+    message += f"🚗 Targa: `{req[1]}`\n"
+    message += f"👤 Cliente: {req[2]}\n"
+    message += f"🏨 Camera: {req[3]}\n\n"
+    message += "La reception richiede la riconsegna del veicolo.\n"
+    message += "Conferma la visualizzazione e indica i tempi!"
+    
+    try:
+        await context.bot.send_message(
+            chat_id=valet_id,
+            text=message,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logging.error(f"Errore invio notifica riconsegna a valet {valet_id}: {e}")
+
+async def notify_reception_delivery_time(context, request_id, req, tempo_text):
+    conn = sqlite3.connect('royal_car_bot.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
+    reception_users = cursor.fetchall()
+    conn.close()
+    
+    keyboard = [[InlineKeyboardButton("✅ Riconsegna Avvenuta", callback_data=f"confirm_delivery_{request_id}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = f"🚚 *Riconsegna Programmata #{request_id}*\n\n"
+    message += f"🚗 Targa: `{req[1]}`\n"
+    message += f"👤 Cliente: {req[2]}\n"
+    message += f"🏨 Camera: {req[3]}\n"
+    message += f"👨‍🔧 Valet: {req[14]}\n"
+    message += f"⏰ Tempo stimato: {tempo_text}\n\n"
+    message += "Il valet arriverà per la riconsegna nel tempo indicato.\n"
+    message += "Clicca il pulsante quando la riconsegna è avvenuta!"
+    
+    for reception_id, in reception_users:
+        try:
+            await context.bot.send_message(
+                chat_id=reception_id,
+                text=message,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    role = get_user_role(user_id)
+    
+    if not role:
+        return
+    
+    # Gestisci foto con caption che indica l'ID richiesta
+    caption = update.message.caption
+    if caption and caption.startswith('#'):
+        try:
+            request_id = int(caption[1:].split()[0])
+            file_id = update.message.photo[-1].file_id
+            
+            # Determina tipo foto
+            tipo = 'prima' if 'prima' in caption.lower() else 'dopo'
+            
+            add_photo(request_id, file_id, tipo, user_id)
+            
+            await update.message.reply_text(
+                f"📷 *Foto aggiunta!*\n\n"
+                f"Foto {tipo} per richiesta #{request_id}\n"
+                f"⏰ Caricata alle {datetime.now().strftime('%H:%M')}",
+                parse_mode='Markdown'
+            )
+            
+        except (ValueError, IndexError):
+            await update.message.reply_text(
+                "❌ *Formato didascalia non valido*\n\n"
+                "📝 *Formato corretto:*\n"
+                "`#ID_RICHIESTA prima` o `#ID_RICHIESTA dopo`\n\n"
+                "💡 *Esempi:*\n"
+                "• `#123 prima`\n"
+                "• `#123 dopo`",
+                parse_mode='Markdown'
+            )
+    else:
+        await update.message.reply_text(
+            "📷 *Come caricare le foto*\n\n"
+            "Per associare la foto ad una richiesta,\n"
+            "aggiungi come didascalia:\n\n"
+            "`#ID_RICHIESTA prima` o `#ID_RICHIESTA dopo`\n\n"
+            "💡 *Esempio:* `#123 prima`",
+            parse_mode='Markdown'
+        )
+
+def main():
+    # Token del bot (da impostare nelle variabili d'ambiente)
+    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    
+    if not TOKEN:
+        print("❌ ERRORE: TELEGRAM_BOT_TOKEN non impostato!")
+        return
+    
+    # Crea applicazione
+    application = Application.builder().token(TOKEN).build()
+    
+    # Aggiungi handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("annulla", cancel_command))
+    application.add_handler(CommandHandler("register", register_user))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
+    
+    # Avvia bot
+    print(f"🤖 {BOT_NAME} v{BOT_VERSION} avviato!")
+    print("📋 Nuove funzionalità v2.0.0:")
+    print("   ✅ Comando /help completo")
+    print("   ✅ Comando /annulla")
+    print("   ✅ Gestione tempi ritiro/riconsegna")
+    print("   ✅ Notifiche automatiche con orari")
+    print("   ✅ Menu pulsanti sempre visibili")
+    print("   ✅ Messaggi di conferma migliorati")
+    print("   ✅ Versioning del bot")
+    
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main()reply_text(
             f"🚗 *{BOT_NAME} v{BOT_VERSION}*\n\n"
             "Per utilizzare questo bot, devi essere registrato.\n\n"
             "📝 *Comandi disponibili:*\n"
@@ -673,550 +1213,10 @@ async def show_valet_requests(update: Update, context: ContextTypes.DEFAULT_TYPE
         message += f"📅 {req[6][:16]}\n\n"
         
         keyboard.append([InlineKeyboardButton(
-            f"🚗 Prendi #{req[0]}", 
-            callback_data=f"assign_{req[0]}"
-        )])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(
-        message, 
-        parse_mode='Markdown',
-        reply_markup=reply_markup
-    )
-
-async def show_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    
-    # Statistiche
-    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato = "nuovo"')
-    nuove = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato IN ("assegnato", "in_corso", "partito")')
-    in_corso = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM requests WHERE stato = "completato"')
-    completate = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM requests WHERE DATE(created_at) = DATE("now")')
-    oggi = cursor.fetchone()[0]
-    
-    cursor.execute('SELECT COUNT(*) FROM requests')
-    totali = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    message = f"📊 *Dashboard RoyalCarBot01*\n\n"
-    message += f"🆕 Richieste nuove: *{nuove}*\n"
-    message += f"⚙️ In lavorazione: *{in_corso}*\n"
-    message += f"✅ Completate: *{completate}*\n"
-    message += f"📅 Richieste oggi: *{oggi}*\n"
-    message += f"📈 Totale richieste: *{totali}*\n\n"
-    message += f"🕐 Ultimo aggiornamento: {datetime.now().strftime('%H:%M')}"
-    
-    await update.message.reply_text(message, parse_mode='Markdown')
-
-async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data
-    user_id = update.effective_user.id
-    role = get_user_role(user_id)
-    
-    # Gestione selezione servizio
-    if data.startswith('servizio_'):
-        servizio = data.replace('servizio_', '').replace('_', ' ').title()
-        request_data = context.user_data.get('request_data', {})
-        request_data['servizio'] = servizio
-        
-        # Crea la richiesta
-        request_id = create_request(
-            request_data['targa'],
-            request_data['cliente'],
-            request_data['camera'],
-            request_data['servizio'],
-            user_id
-        )
-        
-        # Reset stato
-        context.user_data['state'] = None
-        context.user_data['request_data'] = {}
-        
-        await query.edit_message_text(
-            f"✅ *Richiesta #{request_id} creata!*\n\n"
-            f"🚗 Targa: `{request_data['targa']}`\n"
-            f"👤 Cliente: {request_data['cliente']}\n"
-            f"🏨 Camera: {request_data['camera']}\n"
-            f"🔧 Servizio: {servizio}\n\n"
-            f"La richiesta è stata inviata al team valet! 🚀",
-            parse_mode='Markdown'
-        )
-        
-        # Notifica ai valet
-        await notify_valets(context, request_id, request_data)
-    
-    # Gestione presa in carico con scelta tempi
-    elif data.startswith('assign_'):
-        request_id = int(data.split('_')[1])
-        
-        keyboard = [
-            [InlineKeyboardButton("⏱️ Ritiro in 5 min ca.", callback_data=f"pickup_{request_id}_5")],
-            [InlineKeyboardButton("⏱️ Ritiro in 10 min ca.", callback_data=f"pickup_{request_id}_10")],
-            [InlineKeyboardButton("⏱️ Ritiro in 20 min ca.", callback_data=f"pickup_{request_id}_20")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"⏰ *Tempo stimato per il ritiro?*\n\n"
-            f"Richiesta #{request_id}\n"
-            f"Seleziona il tempo stimato per raggiungere l'hotel:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    
-    # Gestione conferma ritiro con tempo
-    elif data.startswith('pickup_'):
-        parts = data.split('_')
-        request_id = int(parts[1])
-        minutes = parts[2]
-        
-        tempo_text = f"{minutes} min ca."
-        update_request_status(request_id, 'assegnato', user_id, tempo_ritiro=tempo_text)
-        
-        req = get_request_by_id(request_id)
-        
-        await query.edit_message_text(
-            f"✅ *Richiesta #{request_id} presa in carico!*\n\n"
-            f"⏰ Tempo stimato ritiro: *{tempo_text}*\n\n"
-            f"🚗 {req[1]} - {req[2]}\n"
-            f"🏨 Camera {req[3]}\n"
-            f"🔧 {req[4]}\n\n"
-            f"Ora puoi aggiornare lo stato quando parti dall'hotel.",
-            parse_mode='Markdown'
-        )
-        
-        # Notifica reception
-        await notify_reception_assignment(context, request_id, req, tempo_text)
-    
-    # Gestione richieste valet
-    elif data.startswith('manage_'):
-        request_id = int(data.split('_')[1])
-        req = get_request_by_id(request_id)
-        
-        if not req:
-            await query.edit_message_text("❌ Richiesta non trovata.")
-            return
-        
-        keyboard = []
-        
-        if req[5] == 'assegnato':
-            keyboard.extend([
-                [InlineKeyboardButton("🚗 Inizia Servizio", callback_data=f"status_{request_id}_in_corso")],
-                [InlineKeyboardButton("🏃‍♂️ Sono Partito", callback_data=f"status_{request_id}_partito")]
-            ])
-        elif req[5] == 'in_corso':
-            keyboard.append([InlineKeyboardButton("✅ Servizio Completato", callback_data=f"status_{request_id}_completato")])
-        elif req[5] == 'completato':
-            keyboard.append([InlineKeyboardButton("🚚 Richiedi Riconsegna", callback_data=f"request_delivery_{request_id}")])
-        
-        keyboard.append([InlineKeyboardButton("❌ Annulla Richiesta", callback_data=f"status_{request_id}_annullato")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        status_emoji = {
-            'assegnato': '👤', 'in_corso': '⚙️', 'partito': '🚗', 'completato': '✅'
-        }
-        
-        message = f"{status_emoji.get(req[5], '📋')} *Richiesta #{request_id}*\n\n"
-        message += f"🚗 Targa: `{req[1]}`\n"
-        message += f"👤 Cliente: {req[2]}\n"
-        message += f"🏨 Camera: {req[3]}\n"
-        message += f"🔧 Servizio: {req[4]}\n"
-        message += f"📊 Stato: {req[5].upper()}\n"
-        if req[9]:  # tempo_ritiro
-            message += f"⏰ Ritiro: {req[9]}\n"
-        if req[10]:  # tempo_riconsegna
-            message += f"🚚 Riconsegna: {req[10]}\n"
-        
-        await query.edit_message_text(
-            message,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    
-    # Gestione cambio stato
-    elif data.startswith('status_'):
-        parts = data.split('_')
-        request_id = int(parts[1])
-        new_status = parts[2]
-        
-        update_request_status(request_id, new_status)
-        
-        status_names = {
-            'in_corso': 'In Corso ⚙️',
-            'partito': 'Partito 🚗',
-            'completato': 'Completato ✅',
-            'annullato': 'Annullato ❌'
-        }
-        
-        await query.edit_message_text(
-            f"✅ *Stato aggiornato!*\n\n"
-            f"Richiesta #{request_id}: {status_names[new_status]}\n\n"
-            f"⏰ Aggiornato alle {datetime.now().strftime('%H:%M')}"
-        )
-        
-        # Notifiche specifiche
-        if new_status == 'partito':
-            req = get_request_by_id(request_id)
-            await notify_reception_departure(context, request_id, req)
-        elif new_status == 'completato':
-            await notify_reception_completion(context, request_id)
-    
-    # Richiesta riconsegna dal valet
-    elif data.startswith('request_delivery_'):
-        request_id = int(data.split('_')[2])
-        
-        keyboard = [
-            [InlineKeyboardButton("🚚 Riconsegna in 10 min", callback_data=f"delivery_{request_id}_10")],
-            [InlineKeyboardButton("🚚 Riconsegna in 20 min", callback_data=f"delivery_{request_id}_20")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"🚚 *Richiesta Riconsegna*\n\n"
-            f"Quanto tempo ti serve per la riconsegna?",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    
-    # Gestione riconsegna dal valet
-    elif data.startswith('delivery_'):
-        parts = data.split('_')
-        request_id = int(parts[1])
-        minutes = parts[2]
-        
-        tempo_text = f"{minutes} min ca."
-        update_request_status(request_id, 'in_riconsegna', tempo_riconsegna=tempo_text)
-        
-        req = get_request_by_id(request_id)
-        
-        await query.edit_message_text(
-            f"✅ *Riconsegna programmata!*\n\n"
-            f"🚚 Tempo stimato: *{tempo_text}*\n"
-            f"🚗 {req[1]} - {req[2]}\n"
-            f"🏨 Camera {req[3]}\n\n"
-            f"La reception è stata avvisata.",
-            parse_mode='Markdown'
-        )
-        
-        # Notifica reception
-        await notify_reception_delivery_time(context, request_id, req, tempo_text)
-    
-    # Conferma riconsegna da reception
-    elif data.startswith('confirm_delivery_'):
-        request_id = int(data.split('_')[2])
-        
-        update_request_status(request_id, 'riconsegnato')
-        
-        await query.edit_message_text(
-            f"✅ *Riconsegna confermata!*\n\n"
-            f"Richiesta #{request_id} completata con successo!\n"
-            f"⏰ Completata alle {datetime.now().strftime('%H:%M')}"
-        )
-
-async def notify_valets(context, request_id, request_data):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT telegram_id, name FROM users WHERE role = "valet" AND active = 1')
-    valets = cursor.fetchall()
-    conn.close()
-    
-    message = f"🆕 *Nuova Richiesta #{request_id}*\n\n"
-    message += f"🚗 Targa: `{request_data['targa']}`\n"
-    message += f"👤 Cliente: {request_data['cliente']}\n"
-    message += f"🏨 Camera: {request_data['camera']}\n"
-    message += f"🔧 Servizio: {request_data['servizio']}\n\n"
-    message += "Usa il menu '🆕 Richieste Nuove' per prendere in carico!"
-    
-    for valet_id, valet_name in valets:
-        try:
-            await context.bot.send_message(
-                chat_id=valet_id,
-                text=message,
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logging.error(f"Errore invio notifica a valet {valet_id}: {e}")
-
-async def notify_reception_assignment(context, request_id, req, tempo_text):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
-    reception_users = cursor.fetchall()
-    conn.close()
-    
-    message = f"👤 *Richiesta #{request_id} Assegnata*\n\n"
-    message += f"🚗 Targa: `{req[1]}`\n"
-    message += f"👤 Cliente: {req[2]}\n"
-    message += f"🏨 Camera: {req[3]}\n"
-    message += f"👨‍🔧 Valet: {req[14]}\n"  # assigned_to_name
-    message += f"⏰ Tempo ritiro: {tempo_text}\n\n"
-    message += "Il valet raggiungerà l'hotel nel tempo indicato."
-    
-    for reception_id, in reception_users:
-        try:
-            await context.bot.send_message(
-                chat_id=reception_id,
-                text=message,
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
-
-async def notify_reception_departure(context, request_id, req):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
-    reception_users = cursor.fetchall()
-    conn.close()
-    
-    message = f"🚗 *Valet in Arrivo #{request_id}*\n\n"
-    message += f"🚗 Targa: `{req[1]}`\n"
-    message += f"👤 Cliente: {req[2]}\n"
-    message += f"🏨 Camera: {req[3]}\n"
-    message += f"👨‍🔧 Valet: {req[14]}\n"  # assigned_to_name
-    message += f"⏰ Partito alle: {datetime.now().strftime('%H:%M')}\n\n"
-    message += "Il valet è in arrivo per il ritiro del veicolo!"
-    
-    for reception_id, in reception_users:
-        try:
-            await context.bot.send_message(
-                chat_id=reception_id,
-                text=message,
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
-
-async def notify_reception_completion(context, request_id):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT r.targa, r.cliente, r.camera, r.servizio, u.name
-        FROM requests r
-        LEFT JOIN users u ON r.assigned_to = u.telegram_id
-        WHERE r.id = ?
-    ''', (request_id,))
-    req = cursor.fetchone()
-    
-    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
-    reception_users = cursor.fetchall()
-    conn.close()
-    
-    if not req:
-        return
-    
-    message = f"✅ *Servizio Completato #{request_id}*\n\n"
-    message += f"🚗 Targa: `{req[0]}`\n"
-    message += f"👤 Cliente: {req[1]}\n"
-    message += f"🏨 Camera: {req[2]}\n"
-    message += f"🔧 Servizio: {req[3]}\n"
-    message += f"👨‍🔧 Valet: {req[4]}\n"
-    message += f"⏰ Completato alle: {datetime.now().strftime('%H:%M')}\n\n"
-    message += "Il veicolo è pronto! Usa '🚚 Richiedi Riconsegna' quando necessario."
-    
-    for reception_id, in reception_users:
-        try:
-            await context.bot.send_message(
-                chat_id=reception_id,
-                text=message,
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
-
-async def notify_valet_for_delivery(context, req):
-    valet_id = None
-    
-    # Trova l'ID del valet dalla richiesta
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT assigned_to FROM requests WHERE id = ?', (req[0],))
-    result = cursor.fetchone()
-    if result:
-        valet_id = result[0]
-    conn.close()
-    
-    if not valet_id:
-        return
-    
-    keyboard = [
-        [InlineKeyboardButton("✅ Messaggio Visualizzato", callback_data=f"delivery_ack_{req[0]}")],
-        [InlineKeyboardButton("🚚 Riconsegna in 10 min", callback_data=f"delivery_{req[0]}_10")],
-        [InlineKeyboardButton("🚚 Riconsegna in 20 min", callback_data=f"delivery_{req[0]}_20")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    message = f"🚚 *Richiesta Riconsegna #{req[0]}*\n\n"
-    message += f"🚗 Targa: `{req[1]}`\n"
-    message += f"👤 Cliente: {req[2]}\n"
-    message += f"🏨 Camera: {req[3]}\n\n"
-    message += "La reception richiede la riconsegna del veicolo.\n"
-    message += "Conferma la visualizzazione e indica i tempi!"
-    
-    try:
-        await context.bot.send_message(
-            chat_id=valet_id,
-            text=message,
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-    except Exception as e:
-        logging.error(f"Errore invio notifica riconsegna a valet {valet_id}: {e}")
-
-async def notify_reception_delivery_time(context, request_id, req, tempo_text):
-    conn = sqlite3.connect('royal_car_bot.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT telegram_id FROM users WHERE role = "reception" AND active = 1')
-    reception_users = cursor.fetchall()
-    conn.close()
-    
-    keyboard = [[InlineKeyboardButton("✅ Riconsegna Avvenuta", callback_data=f"confirm_delivery_{request_id}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    message = f"🚚 *Riconsegna Programmata #{request_id}*\n\n"
-    message += f"🚗 Targa: `{req[1]}`\n"
-    message += f"👤 Cliente: {req[2]}\n"
-    message += f"🏨 Camera: {req[3]}\n"
-    message += f"👨‍🔧 Valet: {req[14]}\n"  # assigned_to_name
-    message += f"⏰ Tempo stimato: {tempo_text}\n\n"
-    message += "Il valet arriverà per la riconsegna nel tempo indicato.\n"
-    message += "Clicca il pulsante quando la riconsegna è avvenuta!"
-    
-    for reception_id, in reception_users:
-        try:
-            await context.bot.send_message(
-                chat_id=reception_id,
-                text=message,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
-            )
-        except Exception as e:
-            logging.error(f"Errore invio notifica a reception {reception_id}: {e}")
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    role = get_user_role(user_id)
-    
-    if not role:
-        return
-    
-    # Gestisci foto con caption che indica l'ID richiesta
-    caption = update.message.caption
-    if caption and caption.startswith('#'):
-        try:
-            request_id = int(caption[1:].split()[0])
-            file_id = update.message.photo[-1].file_id
-            
-            # Determina tipo foto
-            tipo = 'prima' if 'prima' in caption.lower() else 'dopo'
-            
-            add_photo(request_id, file_id, tipo, user_id)
-            
-            await update.message.reply_text(
-                f"📷 *Foto aggiunta!*\n\n"
-                f"Foto {tipo} per richiesta #{request_id}\n"
-                f"⏰ Caricata alle {datetime.now().strftime('%H:%M')}",
-                parse_mode='Markdown'
-            )
-            
-        except (ValueError, IndexError):
-            await update.message.reply_text(
-                "❌ *Formato didascalia non valido*\n\n"
-                "📝 *Formato corretto:*\n"
-                "`#ID_RICHIESTA prima` o `#ID_RICHIESTA dopo`\n\n"
-                "💡 *Esempi:*\n"
-                "• `#123 prima`\n"
-                "• `#123 dopo`",
-                parse_mode='Markdown'
-            )
-    else:
-        await update.message.reply_text(
-            "📷 *Come caricare le foto*\n\n"
-            "Per associare la foto ad una richiesta,\n"
-            "aggiungi come didascalia:\n\n"
-            "`#ID_RICHIESTA prima` o `#ID_RICHIESTA dopo`\n\n"
-            "💡 *Esempio:* `#123 prima`",
-            parse_mode='Markdown'
-        )
-
-def main():
-    # Token del bot (da impostare nelle variabili d'ambiente)
-    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-    
-    if not TOKEN:
-        print("❌ ERRORE: TELEGRAM_BOT_TOKEN non impostato!")
-        return
-    
-    # Crea applicazione
-    application = Application.builder().token(TOKEN).build()
-    
-    # Aggiungi handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("annulla", cancel_command))
-    application.add_handler(CommandHandler("register", register_user))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(CallbackQueryHandler(handle_callback_query))
-    
-    # Avvia bot
-    print("🤖 RoyalCarBot01 avviato!")
-    print("📋 Nuove funzionalità:")
-    print("   ✅ Comando /help completo")
-    print("   ✅ Comando /annulla")
-    print("   ✅ Gestione tempi ritiro/riconsegna")
-    print("   ✅ Notifiche automatiche con orari")
-    print("   ✅ Menu pulsanti sempre visibili")
-    print("   ✅ Messaggi di conferma migliorati")
-    
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main()dButton(
             f"⚙️ Gestisci #{req[0]}", 
             callback_data=f"manage_{req[0]}"
         )])
     
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
     
-    await update.message.reply_text(
-        message, 
-        parse_mode='Markdown',
-        reply_markup=reply_markup
-    )
-
-async def show_new_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    requests = get_requests(stato='nuovo')
-    
-    if not requests:
-        await update.message.reply_text(
-            "🆕 *Nessuna nuova richiesta*\n\n"
-            "Al momento non ci sono richieste disponibili.",
-            parse_mode='Markdown'
-        )
-        return
-    
-    message = "🆕 *Nuove Richieste Disponibili*\n\n"
-    keyboard = []
-    
-    for req in requests:
-        message += f"🆔 *#{req[0]}* - {req[1]}\n"
-        message += f"👤 {req[2]} | 🏨 {req[3]}\n"
-        message += f"🔧 {req[4]}\n"
-        message += f"📅 {req[6][:16]}\n\n"
-        
-        keyboard.append([InlineKeyboar
+    await update.message.
