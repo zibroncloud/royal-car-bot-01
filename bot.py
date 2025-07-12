@@ -60,7 +60,6 @@ init_db()
 def validate_targa(targa):
     """Valida formato targa italiana"""
     targa = targa.upper().strip()
-    # Formato base: 2 lettere + 3 numeri + 2 lettere
     pattern = r'^[A-Z]{2}[0-9]{3}[A-Z]{2}$'
     return bool(re.match(pattern, targa))
 
@@ -246,7 +245,6 @@ async def annulla_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_state = context.user_data.get('state')
     
     if current_state:
-        # Determina che operazione stava facendo
         if current_state.startswith('ritiro_'):
             operazione = "registrazione auto"
         elif current_state == 'upload_foto':
@@ -270,7 +268,6 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📷 *Nessuna foto disponibile*\n\nNon ci sono auto con foto caricate.", parse_mode='Markdown')
             return
         
-        # Raggruppa per stato per migliore organizzazione
         stati_order = ['parcheggiata', 'riconsegna', 'ritiro', 'richiesta', 'uscita']
         auto_per_stato = {}
         
@@ -282,10 +279,8 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         keyboard = []
         
-        # Organizza per stato con emoji
         for stato in stati_order:
             if stato in auto_per_stato:
-                # Aggiungi separatore per stato
                 if stato == 'parcheggiata':
                     emoji_stato = "🅿️"
                 elif stato == 'riconsegna':
@@ -294,7 +289,7 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     emoji_stato = "⚙️"
                 elif stato == 'richiesta':
                     emoji_stato = "📋"
-                else:  # uscita
+                else:
                     emoji_stato = "🏁"
                 
                 for auto in auto_per_stato[stato]:
@@ -313,7 +308,7 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Errore durante il caricamento delle auto con foto")
 
 async def ritiro_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()  # Reset stato
+    context.user_data.clear()
     context.user_data['state'] = 'ritiro_targa'
     await update.message.reply_text("🚗 *RITIRO AUTO*\n\nInserisci la *TARGA* del veicolo (formato: XX123XX):", parse_mode='Markdown')
 
@@ -553,7 +548,6 @@ async def lista_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             stanza, cognome, targa, chiave, data_park = auto
             giorni = calcola_giorni_parcheggio(data_park) if data_park else 0
             
-            # Recupera conteggio foto per questa auto
             try:
                 conn_foto = sqlite3.connect('carvalet.db')
                 cursor_foto = conn_foto.cursor()
@@ -582,7 +576,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         state = context.user_data.get('state')
         text = update.message.text.strip()
         
-        # Controllo comandi speciali durante le operazioni
         if text.lower() in ['/annulla', '/help', '/start']:
             if text.lower() == '/annulla':
                 await annulla_command(update, context)
@@ -657,7 +650,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'ritiro_note':
             note = text if text.lower() != 'skip' else None
             
-            # Salva i dati
             targa = context.user_data['targa']
             cognome = context.user_data['cognome'] 
             stanza = context.user_data['stanza']
@@ -674,10 +666,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 conn.commit()
                 conn.close()
                 
-                # Pulisci stato DOPO aver salvato
                 context.user_data.clear()
                 
-                # Crea messaggio di recap completo
                 recap_msg = f"✅ *RICHIESTA CREATA!*\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
                 
                 if tipo_auto:
@@ -709,7 +699,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("📷 Invia le foto dell'auto (una o più foto). Scrivi 'fine' quando hai finito.")
         
         elif state.startswith('mod_'):
-            # Gestione modifiche
             parts = state.split('_')
             field = parts[1]
             auto_id = int(parts[2])
@@ -810,8 +799,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         elif data.startswith('incorso_'):
             auto_id = int(data.split('_')[1])
-            
-            # Verifica che l'auto esista ancora
             auto = get_auto_by_id(auto_id)
             if not auto:
                 await query.edit_message_text("❌ Auto non trovata")
@@ -875,7 +862,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await query.edit_message_text("❌ Auto non trovata")
                 return
             
-            if auto[9]:  # data_park
+            if auto[9]:
                 giorni = calcola_giorni_parcheggio(auto[9])
                 if update_auto_stato(auto_id, 'riconsegna', giorni):
                     sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
@@ -890,7 +877,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await query.edit_message_text("❌ Auto non trovata")
                 return
             
-            if auto[9]:  # data_park
+            if auto[9]:
                 giorni = calcola_giorni_parcheggio(auto[9])
                 if update_auto_stato(auto_id, 'uscita', giorni):
                     sconto_text = f" ({giorni} giorni" + (" - SCONTO ✨)" if giorni >= 10 else ")")
@@ -948,10 +935,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await query.edit_message_text(f"📷 *Nessuna foto trovata*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}", parse_mode='Markdown')
                 return
             
-            # Invia messaggio con info auto
             await query.edit_message_text(f"📷 *FOTO AUTO*\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📊 Stato: {auto[7]}\n📷 Totale foto: {len(foto_list)}", parse_mode='Markdown')
             
-            # Invia tutte le foto (massimo 10 per volta per evitare spam)
             max_foto_per_invio = 10
             for i, foto in enumerate(foto_list):
                 if i >= max_foto_per_invio:
@@ -960,7 +945,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 file_id, data_upload = foto
                 try:
-                    # Formatta data upload
                     data_formattata = datetime.strptime(data_upload, '%Y-%m-%d %H:%M:%S').strftime('%d/%m/%Y %H:%M')
                     caption = f"📷 Foto #{i+1} - {data_formattata}"
                     
@@ -1056,7 +1040,6 @@ def main():
         
         application = Application.builder().token(TOKEN).build()
         
-        # Registrazione handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("annulla", annulla_command))
@@ -1091,4 +1074,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-                await update.message.reply_text("
