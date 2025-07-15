@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# CarValetBOT v4.0 LIGHT by Zibroncloud
+# CarValetBOT v4.2 LIGHT by Zibroncloud
 import os,logging,sqlite3,re
 from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.1 LIGHT"
+BOT_VERSION="4.2 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -204,6 +204,40 @@ async def vedi_foto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   logging.error(f"Errore vedi_foto: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto con foto")
 
+async def vedi_recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  oggi=date.today().strftime('%Y-%m-%d')
+  cursor.execute('SELECT id,targa,cognome,stanza,stato,numero_progressivo,tempo_stimato,ora_accettazione FROM auto WHERE date(data_arrivo)=? AND stato IN ("richiesta","ritiro","parcheggiata") ORDER BY numero_progressivo',(oggi,))
+  auto_list=cursor.fetchall()
+  conn.close()
+  if not auto_list:
+   await update.message.reply_text("📋 Nessun recupero in corso oggi")
+   return
+  msg="🔍 STATO RECUPERI DI OGGI:\n\n"
+  for auto in auto_list:
+   id_auto,targa,cognome,stanza,stato,numero,tempo_stimato,ora_accettazione=auto
+   if stato=='richiesta':
+    emoji="📋"
+    status_text="In attesa valet"
+   elif stato=='ritiro':
+    emoji="⚙️"
+    if tempo_stimato and ora_accettazione:
+     try:
+      ora_acc=datetime.strptime(ora_accettazione,'%Y-%m-%d %H:%M:%S')
+      status_text=f"Recupero in corso - {tempo_stimato} min (dalle {ora_acc.strftime('%H:%M')})"
+     except:status_text=f"Recupero in corso - {tempo_stimato} min"
+    else:status_text="Recupero in corso"
+   elif stato=='parcheggiata':
+    emoji="🅿️"
+    status_text="AUTO PARCHEGGIATA ✅"
+   msg+=f"{emoji} #{numero} | Stanza {stanza} | {targa} ({cognome})\n    {status_text}\n\n"
+  await update.message.reply_text(msg)
+ except Exception as e:
+  logging.error(f"Errore vedi_recupero: {e}")
+  await update.message.reply_text("❌ Errore durante il caricamento dei recuperi")
+
 async def ritiro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  context.user_data.clear()
  context.user_data['state']='ritiro_targa'
@@ -253,7 +287,7 @@ async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  try:
   conn=sqlite3.connect('carvalet.db')
   cursor=conn.cursor()
-  cursor.execute('SELECT id,targa,cognome,stanza,numero_chiave FROM auto WHERE stato="richiesta" ORDER BY stanza')
+  cursor.execute('SELECT id,targa,cognome,stanza,numero_chiave,numero_progressivo FROM auto WHERE stato="richiesta" ORDER BY numero_progressivo')
   auto_list=cursor.fetchall()
   conn.close()
   if not auto_list:
@@ -261,10 +295,10 @@ async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){chiave_text}",callback_data=f"recupero_{auto[0]}")])
+   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else""
+   keyboard.append([InlineKeyboardButton(f"#{auto[5]} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){chiave_text}",callback_data=f"recupero_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
-  await update.message.reply_text("⚙️ RECUPERO AUTO\n\nSeleziona l'auto da recuperare:",reply_markup=reply_markup)
+  await update.message.reply_text("⚙️ RECUPERO AUTO (Ordine cronologico)\n\nSeleziona l'auto da recuperare:",reply_markup=reply_markup)
  except Exception as e:
   logging.error(f"Errore recupero: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -338,7 +372,7 @@ async def modifica_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else""
    keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){chiave_text}",callback_data=f"modifica_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("✏️ MODIFICA AUTO\n\nSeleziona l'auto da modificare:",reply_markup=reply_markup)
@@ -713,10 +747,10 @@ def main():
   application.add_handler(CallbackQueryHandler(handle_callback_query))
   logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   logging.info("✅ Sistema gestione auto hotel attivo")
-  logging.info("🔧 v4.1 LIGHT: +Numerazione auto +Stato recuperi")
+  logging.info("🔧 v4.2 LIGHT: +Numerazione auto +Stato recuperi - FUNZIONANTE")
   print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   print("✅ Sistema gestione auto hotel attivo")
-  print("🔧 v4.1 LIGHT: +Numerazione auto +Stato recuperi")
+  print("🔧 v4.2 LIGHT: +Numerazione auto +Stato recuperi - FUNZIONANTE")
   application.run_polling(allowed_updates=Update.ALL_TYPES)
  except Exception as e:
   logging.error(f"Errore durante l'avvio del bot: {e}")
