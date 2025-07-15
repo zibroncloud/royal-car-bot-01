@@ -5,7 +5,7 @@ from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.3 LIGHT"
+BOT_VERSION="4.4 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -110,7 +110,7 @@ By Zibroncloud
 /foto - Carica foto auto
 /vedi_foto - Visualizza foto auto
 /park - Conferma auto parcheggiata
-/exit - Auto in riconsegna
+/exit - Auto in riconsegna (da qualunque stato dopo ritiro) (da qualunque stato)
 /modifica - Modifica TUTTI i dati auto
 
 📊 COMANDI UTILITÀ:
@@ -139,7 +139,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /foto - Carica foto dell'auto
 /vedi_foto - Visualizza foto per auto/cliente
 /park - Conferma auto parcheggiata
-/exit - Metti auto in riconsegna
+/exit - Metti auto in riconsegna (da qualunque stato dopo ritiro)
 /modifica - Modifica targa, cognome, stanza, chiave, note
 
 📊 COMANDI UTILITÀ:
@@ -387,17 +387,19 @@ async def exit_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  try:
   conn=sqlite3.connect('carvalet.db')
   cursor=conn.cursor()
-  cursor.execute('SELECT id,targa,cognome,stanza FROM auto WHERE stato="parcheggiata" ORDER BY stanza')
+  cursor.execute('SELECT id,targa,cognome,stanza,stato FROM auto WHERE stato IN ("ritiro","parcheggiata","stand-by","rientro","riconsegna") ORDER BY stanza')
   auto_list=cursor.fetchall()
   conn.close()
   if not auto_list:
-   await update.message.reply_text("📋 Nessuna auto in parcheggio")
+   await update.message.reply_text("📋 Nessuna auto disponibile per exit")
    return
   keyboard=[]
+  emoji_map={'ritiro':"⚙️",'parcheggiata':"🅿️",'stand-by':"⏸️",'rientro':"🔄",'riconsegna':"🚪"}
   for auto in auto_list:
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]})",callback_data=f"exit_{auto[0]}")])
+   emoji=emoji_map.get(auto[4],"❓")
+   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}) - {auto[4]}",callback_data=f"exit_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
-  await update.message.reply_text("🚪 AUTO IN RICONSEGNA\n\nSeleziona l'auto:",reply_markup=reply_markup)
+  await update.message.reply_text("🚪 AUTO IN RICONSEGNA\n\nSeleziona l'auto (da qualunque stato):",reply_markup=reply_markup)
  except Exception as e:
   logging.error(f"Errore exit: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto")
@@ -671,7 +673,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text("❌ Auto non trovata")
     return
    if update_auto_stato(auto_id,'riconsegna'):
-    await query.edit_message_text(f"🚪 AUTO IN RICONSEGNA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+    stato_precedente={'ritiro':'ritiro','parcheggiata':'parcheggio','stand-by':'stand-by','rientro':'rientro','riconsegna':'riconsegna'}
+    await query.edit_message_text(f"🚪 AUTO IN RICONSEGNA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📍 Da: {stato_precedente.get(auto[6],'stato')}\n\n⏰ Ora pronta per conferma partenza definitiva\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
    else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
   elif data.startswith('riconsegna_'):
    auto_id=int(data.split('_')[1])
