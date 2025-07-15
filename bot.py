@@ -5,7 +5,7 @@ from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.5 LIGHT"
+BOT_VERSION="4.6 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -132,14 +132,13 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /vedi_recupero - Vedi tutti i recuperi con tempi stimati
 /riconsegna - Richiesta riconsegna temporanea
 /rientro - Richiesta rientro auto in stand-by
-/partenza - Conferma partenza definitiva
 
 🚗 COMANDI VALET:
 /recupero - Gestione completa recuperi (priorità automatica)
 /foto - Carica foto dell'auto
 /vedi_foto - Visualizza foto per auto/cliente
 /park - Conferma auto parcheggiata
-/exit - Metti auto in riconsegna (da qualunque stato dopo ritiro)
+/partito - Uscita definitiva auto (da qualunque stato)
 /modifica - Modifica targa, cognome, stanza, chiave, note
 
 📊 COMANDI UTILITÀ:
@@ -161,7 +160,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 6️⃣ Hotel: /rientro → 7️⃣ Valet: /recupero → 8️⃣ Valet: /park
 
 🏁 USCITA DEFINITIVA:
-9️⃣ Hotel: /partenza
+9️⃣ Valet: /partito (da qualunque stato) → Auto eliminata
 
 🎯 STATI AUTO:
 📋 richiesta - Primo ritiro richiesto
@@ -697,16 +696,26 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if update_auto_stato(auto_id,'parcheggiata'):
     await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n🔢 Auto #{auto[11]} completata\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
    else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
-  elif data.startswith('exit_'):
+  elif data.startswith('partito_'):
    auto_id=int(data.split('_')[1])
    auto=get_auto_by_id(auto_id)
    if not auto:
     await query.edit_message_text("❌ Auto non trovata")
     return
-   if update_auto_stato(auto_id,'riconsegna'):
-    stato_precedente={'ritiro':'ritiro','parcheggiata':'parcheggio','stand-by':'stand-by','rientro':'rientro','riconsegna':'riconsegna'}
-    await query.edit_message_text(f"🚪 AUTO IN RICONSEGNA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📍 Da: {stato_precedente.get(auto[6],'stato')}\n\n⏰ Ora pronta per conferma partenza definitiva\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
-   else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
+   keyboard=[[InlineKeyboardButton("✅ SI - Conferma uscita definitiva",callback_data=f"conferma_partito_{auto_id}")],[InlineKeyboardButton("❌ ANNULLA",callback_data="annulla_partito")]]
+   reply_markup=InlineKeyboardMarkup(keyboard)
+   await query.edit_message_text(f"🏁 CONFERMA USCITA DEFINITIVA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📍 Stato attuale: {auto[6]}\n\n⚠️ L'auto sarà eliminata definitivamente dal sistema!\n\nSei sicuro?",reply_markup=reply_markup)
+  elif data.startswith('conferma_partito_'):
+   auto_id=int(data.split('_')[2])
+   auto=get_auto_by_id(auto_id)
+   if not auto:
+    await query.edit_message_text("❌ Auto non trovata")
+    return
+   if update_auto_stato(auto_id,'uscita'):
+    await query.edit_message_text(f"🏁 AUTO PARTITA DEFINITIVAMENTE!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n✅ Auto eliminata dal sistema\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+   else:await query.edit_message_text("❌ Errore durante l'eliminazione dell'auto")
+  elif data=='annulla_partito':
+   await query.edit_message_text("❌ Operazione annullata\n\nL'auto non è stata eliminata.")
   elif data.startswith('riconsegna_'):
    auto_id=int(data.split('_')[1])
    auto=get_auto_by_id(auto_id)
@@ -837,11 +846,10 @@ def main():
   application.add_handler(CommandHandler("ritiro",ritiro_command))
   application.add_handler(CommandHandler("riconsegna",riconsegna_command))
   application.add_handler(CommandHandler("rientro",rientro_command))
-  application.add_handler(CommandHandler("partenza",partenza_command))
+  application.add_handler(CommandHandler("partito",partito_command))
   application.add_handler(CommandHandler("recupero",recupero_command))
   application.add_handler(CommandHandler("foto",foto_command))
   application.add_handler(CommandHandler("park",park_command))
-  application.add_handler(CommandHandler("exit",exit_command))
   application.add_handler(CommandHandler("modifica",modifica_command))
   application.add_handler(CommandHandler("lista_auto",lista_auto_command))
   application.add_handler(MessageHandler(filters.TEXT&~filters.COMMAND,handle_message))
