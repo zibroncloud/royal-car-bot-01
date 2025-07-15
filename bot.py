@@ -5,7 +5,7 @@ from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.4 LIGHT"
+BOT_VERSION="4.5 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -114,7 +114,7 @@ By Zibroncloud
 /modifica - Modifica TUTTI i dati auto
 
 📊 COMANDI UTILITÀ:
-/lista_auto - Auto in parcheggio
+/lista_auto - Auto in parcheggio + statistiche
 
 ❓ COMANDI AIUTO:
 /help - Mostra questa guida
@@ -143,7 +143,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /modifica - Modifica targa, cognome, stanza, chiave, note
 
 📊 COMANDI UTILITÀ:
-/lista_auto - Elenco auto parcheggiate
+/lista_auto - Auto in parcheggio + statistiche giornaliere/mensili
 
 ❓ COMANDI AIUTO:
 /start - Messaggio di benvenuto
@@ -428,18 +428,49 @@ async def lista_auto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  try:
   conn=sqlite3.connect('carvalet.db')
   cursor=conn.cursor()
+  
+  # Lista auto in parcheggio
   cursor.execute('SELECT stanza,cognome,targa,numero_chiave,foto_count FROM auto WHERE stato="parcheggiata" ORDER BY stanza')
   auto_list=cursor.fetchall()
+  
+  # Statistiche giornaliere
+  oggi=date.today().strftime('%Y-%m-%d')
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=?',(oggi,))
+  entrate_oggi=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE date(data_uscita)=? AND stato="uscita"',(oggi,))
+  uscite_oggi=cursor.fetchone()[0]
+  
+  # Statistiche mensili
+  mese_corrente=date.today().strftime('%Y-%m')
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_arrivo)=?',(mese_corrente,))
+  entrate_mese=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_uscita)=? AND stato="uscita"',(mese_corrente,))
+  uscite_mese=cursor.fetchone()[0]
+  
   conn.close()
+  
+  # Costruisco il messaggio
+  oggi_formattato=datetime.now().strftime('%d/%m/%Y')
+  mese_formattato=datetime.now().strftime('%B %Y')
+  
+  msg=f"📊 STATISTICHE {oggi_formattato}:\n\n"
+  msg+=f"📈 OGGI:\n"
+  msg+=f"  🚗 Entrate: {entrate_oggi}\n"
+  msg+=f"  🏁 Uscite: {uscite_oggi}\n\n"
+  msg+=f"📅 {mese_formattato.upper()}:\n"
+  msg+=f"  🚗 Entrate: {entrate_mese}\n"
+  msg+=f"  🏁 Uscite: {uscite_mese}\n\n"
+  
   if not auto_list:
-   await update.message.reply_text("🅿️ Nessuna auto in parcheggio")
-   return
-  msg="🅿️ AUTO IN PARCHEGGIO:\n\n"
-  for auto in auto_list:
-   stanza,cognome,targa,chiave,foto_count=auto
-   chiave_text=f"Chiave: {chiave}" if chiave else "Chiave: --"
-   foto_text=f" 📷 {foto_count}" if foto_count>0 else ""
-   msg+=f"{stanza} | {cognome} | {targa} | {chiave_text}{foto_text}\n"
+   msg+="🅿️ Nessuna auto in parcheggio"
+  else:
+   msg+=f"🅿️ AUTO IN PARCHEGGIO ({len(auto_list)}):\n\n"
+   for auto in auto_list:
+    stanza,cognome,targa,chiave,foto_count=auto
+    chiave_text=f"Chiave: {chiave}" if chiave else "Chiave: --"
+    foto_text=f" 📷 {foto_count}" if foto_count>0 else ""
+    msg+=f"{stanza} | {cognome} | {targa} | {chiave_text}{foto_text}\n"
+  
   await update.message.reply_text(msg)
  except Exception as e:
   logging.error(f"Errore lista_auto: {e}")
