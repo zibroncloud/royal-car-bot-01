@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CarValetBOT v3.5 - Sistema Gestione Auto Hotel
-By Claude AI & Zibroncloud
-Data: 12 Luglio 2025
-Changelog v3.5: Fix validazione targhe internazionali, menu semplificato
+CarValetBOT v3.6 - Sistema Gestione Auto Hotel
+By Zibroncloud
+Data: 15 Luglio 2025
+Changelog v3.6: Comando /incorso → /recupero, nuovo comando /status con schede auto
 """
 
 import os
@@ -15,7 +15,7 @@ from datetime import datetime, date
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-BOT_VERSION = "3.5"
+BOT_VERSION = "3.6"
 BOT_NAME = "CarValetBOT"
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -177,15 +177,16 @@ def calcola_giorni_parcheggio(data_park):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = f"""🚗 {BOT_NAME} v{BOT_VERSION}
-By Claude AI & Zibroncloud
+By Zibroncloud
 
 🏨 COMANDI HOTEL:
 /ritiro - Richiesta ritiro auto
 /riconsegna - Lista auto per riconsegna  
 /partenza - Riconsegna finale (uscita)
+/status - Visualizza stato auto
 
 🚗 COMANDI VALET:
-/incorso - Ritiro in corso
+/recupero - Ritiro in corso
 /foto - Carica foto auto
 /vedi_foto - Visualizza foto auto
 /park - Conferma auto parcheggiata
@@ -214,9 +215,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /ritiro - Crea nuova richiesta ritiro auto
 /riconsegna - Seleziona auto da riconsegnare
 /partenza - Conferma partenza definitiva
+/status - Visualizza stato dettagliato auto
 
 🚗 COMANDI VALET:
-/incorso - Inizia ritiro auto richiesta
+/recupero - Inizia ritiro auto richiesta
 /foto - Carica foto dell'auto
 /vedi_foto - Visualizza foto per auto/cliente
 /park - Conferma auto parcheggiata
@@ -234,14 +236,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📋 WORKFLOW TIPICO:
 1️⃣ Hotel: /ritiro (inserisci targa, cognome, stanza)
-2️⃣ Valet: /incorso (seleziona auto e tempo)
+2️⃣ Valet: /recupero (seleziona auto e tempo)
 3️⃣ Valet: /park (conferma parcheggio)
 4️⃣ Hotel: /riconsegna (richiesta riconsegna)
 5️⃣ Hotel: /partenza (conferma uscita)
 
 🎯 STATI AUTO:
 richiesta - Appena creata
-ritiro - Valet sta ritirando
+ritiro - Valet sta recuperando
 parcheggiata - In parcheggio
 riconsegna - In attesa riconsegna
 uscita - Partita definitivamente
@@ -320,6 +322,58 @@ async def vedi_foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Errore comando vedi_foto: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto con foto")
 
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /status - Mostra stato dettagliato auto"""
+    try:
+        conn = sqlite3.connect('carvalet.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, targa, cognome, stanza, stato, numero_chiave FROM auto WHERE stato != "uscita" ORDER BY stanza')
+        auto_list = cursor.fetchall()
+        conn.close()
+        
+        if not auto_list:
+            await update.message.reply_text("📋 Nessuna auto presente nel sistema")
+            return
+        
+        keyboard = []
+        stati_order = ['richiesta', 'ritiro', 'parcheggiata', 'riconsegna']
+        auto_per_stato = {}
+        
+        # Raggruppa auto per stato
+        for auto in auto_list:
+            stato = auto[4]
+            if stato not in auto_per_stato:
+                auto_per_stato[stato] = []
+            auto_per_stato[stato].append(auto)
+        
+        # Crea pulsanti ordinati per stato
+        for stato in stati_order:
+            if stato in auto_per_stato:
+                if stato == 'richiesta':
+                    emoji_stato = "📋"
+                elif stato == 'ritiro':
+                    emoji_stato = "⚙️"
+                elif stato == 'parcheggiata':
+                    emoji_stato = "🅿️"
+                elif stato == 'riconsegna':
+                    emoji_stato = "🚪"
+                
+                for auto in auto_per_stato[stato]:
+                    id_auto, targa, cognome, stanza, _, numero_chiave = auto
+                    chiave_text = f" - Chiave: {numero_chiave}" if numero_chiave else ""
+                    keyboard.append([InlineKeyboardButton(
+                        f"{emoji_stato} Stanza {stanza} - {targa} ({cognome}){chiave_text}", 
+                        callback_data=f"status_{id_auto}"
+                    )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("📊 STATUS AUTO\n\nSeleziona l'auto per vedere la scheda dettagliata:", 
+                                       reply_markup=reply_markup)
+    
+    except Exception as e:
+        logging.error(f"Errore comando status: {e}")
+        await update.message.reply_text("❌ Errore durante il caricamento dello status auto")
+
 async def ritiro_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     context.user_data['state'] = 'ritiro_targa'
@@ -379,7 +433,7 @@ async def partenza_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Errore comando partenza: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
 
-async def incorso_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def recupero_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = sqlite3.connect('carvalet.db')
         cursor = conn.cursor()
@@ -396,14 +450,14 @@ async def incorso_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chiave_text = f" - Chiave: {auto[4]}" if auto[4] else ""
             keyboard.append([InlineKeyboardButton(
                 f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){chiave_text}", 
-                callback_data=f"incorso_{auto[0]}"
+                callback_data=f"recupero_{auto[0]}"
             )])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("⚙️ RITIRO IN CORSO\n\nSeleziona l'auto da ritirare:", 
+        await update.message.reply_text("⚙️ RECUPERO AUTO\n\nSeleziona l'auto da recuperare:", 
                                        reply_markup=reply_markup)
     except Exception as e:
-        logging.error(f"Errore comando incorso: {e}")
+        logging.error(f"Errore comando recupero: {e}")
         await update.message.reply_text("❌ Errore durante il caricamento delle auto")
 
 async def foto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -810,7 +864,58 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             context.user_data['state'] = 'ritiro_chiave'
             await query.edit_message_text("🔑 Inserisci il NUMERO CHIAVE (0-999) o scrivi 'skip' per saltare:")
         
-        elif data.startswith('incorso_'):
+        elif data.startswith('status_'):
+            auto_id = int(data.split('_')[1])
+            auto = get_auto_by_id(auto_id)
+            if not auto:
+                await query.edit_message_text("❌ Auto non trovata")
+                return
+            
+            # Calcola giorni parcheggio se applicabile
+            giorni_text = ""
+            if auto[9] and auto[7] in ['parcheggiata', 'riconsegna']:
+                giorni = calcola_giorni_parcheggio(auto[9])
+                sconto_text = " ✨ CON SCONTO" if giorni >= 10 else ""
+                giorni_text = f"\n📅 Giorni parcheggio: {giorni}{sconto_text}"
+            
+            # Emoji stato
+            if auto[7] == 'richiesta':
+                emoji_stato = "📋"
+                stato_text = "RICHIESTA RITIRO"
+            elif auto[7] == 'ritiro':
+                emoji_stato = "⚙️"
+                stato_text = "IN RECUPERO"
+            elif auto[7] == 'parcheggiata':
+                emoji_stato = "🅿️"
+                stato_text = "PARCHEGGIATA"
+            elif auto[7] == 'riconsegna':
+                emoji_stato = "🚪"
+                stato_text = "IN RICONSEGNA"
+            else:
+                emoji_stato = "❓"
+                stato_text = auto[7].upper()
+            
+            # Conta foto
+            foto_count = auto[12] if auto[12] and auto[12] > 0 else 0
+            foto_text = f"\n📷 Foto caricate: {foto_count}" if foto_count > 0 else "\n📷 Nessuna foto"
+            
+            status_msg = f"""📊 SCHEDA AUTO
+
+{emoji_stato} STATO: {stato_text}
+
+🚗 Targa: {auto[1]}
+👤 Cliente: {auto[2]}
+🏨 Stanza: {auto[3]}
+🚗 Tipo: {auto[4] or 'Non specificato'}
+🔑 Chiave: {auto[5] or 'Non assegnata'}
+📅 Arrivo: {auto[8]}
+📝 Note: {auto[6] or 'Nessuna'}{giorni_text}{foto_text}
+
+🆔 ID Auto: {auto[0]}"""
+            
+            await query.edit_message_text(status_msg)
+        
+        elif data.startswith('recupero_'):
             auto_id = int(data.split('_')[1])
             auto = get_auto_by_id(auto_id)
             if not auto:
@@ -824,7 +929,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text("⏰ TEMPO STIMATO RITIRO:", reply_markup=reply_markup)
+            await query.edit_message_text("⏰ TEMPO STIMATO RECUPERO:", reply_markup=reply_markup)
         
         elif data.startswith('tempo_'):
             parts = data.split('_')
@@ -837,7 +942,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 return
             
             if update_auto_stato(auto_id, 'ritiro'):
-                await query.edit_message_text(f"✅ RITIRO AVVIATO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+                await query.edit_message_text(f"✅ RECUPERO AVVIATO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
             else:
                 await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
         
@@ -1053,19 +1158,6 @@ def main():
         
         application = Application.builder().token(TOKEN).build()
         
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CommandHandler("annulla", annulla_command))
-        application.add_handler(CommandHandler("vedi_foto", vedi_foto_command))
-        application.add_handler(CommandHandler("ritiro", ritiro_command))
-        application.add_handler(CommandHandler("riconsegna", riconsegna_command))
-        application.add_handler(CommandHandler("partenza", partenza_command))
-        application.add_handler(CommandHandler("incorso", incorso_command))
-        application.add_handler(CommandHandler("foto", foto_command))
-        application.add_handler(CommandHandler("park", park_command))
-        application.add_handler(CommandHandler("exit", exit_command))
-        application.add_handler(CommandHandler("modifica", modifica_command))
-        application.add_handler(CommandHandler("conta_auto", conta_auto_command))
         application.add_handler(CommandHandler("lista_auto", lista_auto_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -1073,11 +1165,11 @@ def main():
         
         logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
         logging.info("✅ Sistema gestione auto hotel attivo")
-        logging.info("🔧 v3.5: Fix validazione targhe internazionali, menu semplificato")
+        logging.info("🔧 v3.6: Comando /incorso → /recupero, nuovo comando /status con schede auto")
         
         print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
         print("✅ Sistema gestione auto hotel attivo")
-        print("🔧 v3.5: Fix validazione targhe internazionali, menu semplificato")
+        print("🔧 v3.6: Comando /incorso → /recupero, nuovo comando /status con schede auto")
         
         application.run_polling(allowed_updates=Update.ALL_TYPES)
     
@@ -1086,4 +1178,18 @@ def main():
         print(f"❌ Errore durante l'avvio: {e}")
 
 if __name__ == '__main__':
-    main()
+    main()("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("annulla", annulla_command))
+        application.add_handler(CommandHandler("vedi_foto", vedi_foto_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("ritiro", ritiro_command))
+        application.add_handler(CommandHandler("riconsegna", riconsegna_command))
+        application.add_handler(CommandHandler("partenza", partenza_command))
+        application.add_handler(CommandHandler("recupero", recupero_command))
+        application.add_handler(CommandHandler("foto", foto_command))
+        application.add_handler(CommandHandler("park", park_command))
+        application.add_handler(CommandHandler("exit", exit_command))
+        application.add_handler(CommandHandler("modifica", modifica_command))
+        application.add_handler(CommandHandler("conta_auto", conta_auto_command))
+        application.add_handler(CommandHandler
