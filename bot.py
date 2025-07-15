@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# CarValetBOT v5.0 FINAL by Zibroncloud
+# CarValetBOT v5.01 by Zibroncloud
 import os,logging,sqlite3,re
 from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="5.0 FINAL"
+BOT_VERSION="5.01"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -15,6 +15,7 @@ def init_db():
   cursor=conn.cursor()
   cursor.execute('''CREATE TABLE IF NOT EXISTS auto (id INTEGER PRIMARY KEY AUTOINCREMENT,targa TEXT NOT NULL,cognome TEXT NOT NULL,stanza INTEGER NOT NULL,numero_chiave INTEGER,note TEXT,stato TEXT DEFAULT 'richiesta',data_arrivo DATE DEFAULT CURRENT_DATE,data_park DATE,data_uscita DATE,foto_count INTEGER DEFAULT 0,numero_progressivo INTEGER,tempo_stimato TEXT,ora_accettazione TIMESTAMP,is_ghost INTEGER DEFAULT 0)''')
   cursor.execute('''CREATE TABLE IF NOT EXISTS foto (id INTEGER PRIMARY KEY AUTOINCREMENT,auto_id INTEGER,file_id TEXT NOT NULL,data_upload TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (auto_id) REFERENCES auto (id))''')
+  cursor.execute('''CREATE TABLE IF NOT EXISTS servizi_extra (id INTEGER PRIMARY KEY AUTOINCREMENT,auto_id INTEGER,tipo_servizio TEXT NOT NULL,data_servizio DATE DEFAULT CURRENT_DATE,FOREIGN KEY (auto_id) REFERENCES auto (id))''')
   conn.commit()
   conn.close()
   logging.info("Database inizializzato")
@@ -30,6 +31,35 @@ def get_prossimo_numero():
   conn.close()
   return (result[0] or 0)+1
  except:return 1
+
+def aggiungi_servizio_extra(auto_id,tipo_servizio):
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  cursor.execute('INSERT INTO servizi_extra (auto_id,tipo_servizio) VALUES (?,?)',(auto_id,tipo_servizio))
+  conn.commit()
+  conn.close()
+  return True
+ except:return False
+
+def get_servizi_stats():
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  mese_corrente=date.today().strftime('%Y-%m')
+  
+  # Statistiche mensili per tipo
+  cursor.execute('SELECT tipo_servizio,COUNT(*) FROM servizi_extra WHERE strftime("%Y-%m",data_servizio)=? GROUP BY tipo_servizio',(mese_corrente,))
+  stats_mese=cursor.fetchall()
+  
+  # Statistiche giornaliere
+  oggi=date.today().strftime('%Y-%m-%d')
+  cursor.execute('SELECT tipo_servizio,COUNT(*) FROM servizi_extra WHERE date(data_servizio)=? GROUP BY tipo_servizio',(oggi,))
+  stats_oggi=cursor.fetchall()
+  
+  conn.close()
+  return stats_mese,stats_oggi
+ except:return [],[]
 
 init_db()
 
@@ -118,6 +148,10 @@ By Zibroncloud
 /partito - Auto uscita definitiva (da qualunque stato)
 /modifica - Modifica TUTTI i dati auto
 
+🔧 SERVIZI EXTRA:
+/servizi - Registra servizi aggiuntivi (ritiro notturno, garage 10+, autolavaggio)
+/servizi_stats - Statistiche mensili servizi extra
+
 👻 COMANDI SPECIALI:
 /ghostcar - Auto staff/direttore (conteggio separato)
 /makepark - Registra auto già parcheggiata (data custom)
@@ -151,6 +185,13 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /partito - Uscita definitiva auto (da qualunque stato)
 /modifica - Modifica targa, cognome, stanza, chiave, note
 
+🔧 SERVIZI EXTRA (v5.01):
+/servizi - Registra servizi aggiuntivi per auto parcheggiate:
+  🌙 Ritiro notturno
+  🏠 Garage 10+ giorni  
+  🚿 Autolavaggio
+/servizi_stats - Statistiche mensili servizi (separate dal normale flusso)
+
 👻 COMANDI SPECIALI:
 /ghostcar - Auto staff/direttore (NON nei conteggi normali)
 /makepark - Registra auto già parcheggiata con data custom
@@ -174,8 +215,11 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 🔄 CICLO 3 - RIENTRO:
 6️⃣ Hotel: /rientro → 7️⃣ Valet: /recupero → 8️⃣ Valet: /park
 
+🔧 SERVIZI AGGIUNTIVI:
+9️⃣ Valet: /servizi → Seleziona auto parcheggiata → Servizio completato
+
 🏁 USCITA DEFINITIVA:
-9️⃣ Valet: /partito (da qualunque stato) → Auto eliminata
+🔟 Valet: /partito (da qualunque stato) → Auto eliminata
 
 👻 COMANDI SPECIALI:
 🔸 /ghostcar - Per auto staff/direttore/ospiti speciali
@@ -192,9 +236,69 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 🔢 NUMERAZIONE: Auto numerate giornalmente per priorità
 👻 GHOST CARS: Conteggio separato dal normale flusso
+🔧 SERVIZI EXTRA: Statistiche separate per servizi aggiuntivi
 🔑 RANGE NUMERI: Stanze e chiavi da 0 a 999
 🌍 TARGHE ACCETTATE: Italiane (XX123XX), Europee, con trattini"""
  await update.message.reply_text(msg)
+
+async def servizi_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  cursor.execute('SELECT id,targa,cognome,stanza,numero_chiave,is_ghost FROM auto WHERE stato="parcheggiata" ORDER BY is_ghost,stanza')
+  auto_list=cursor.fetchall()
+  conn.close()
+  if not auto_list:
+   await update.message.reply_text("📋 Nessuna auto in parcheggio per servizi")
+   return
+  keyboard=[]
+  for auto in auto_list:
+   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   ghost_text=" 👻" if auto[5] else ""
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"servizi_auto_{auto[0]}")])
+  reply_markup=InlineKeyboardMarkup(keyboard)
+  await update.message.reply_text("🔧 SERVIZI EXTRA\n\nSeleziona l'auto per registrare un servizio:",reply_markup=reply_markup)
+ except Exception as e:
+  logging.error(f"Errore servizi: {e}")
+  await update.message.reply_text("❌ Errore durante il caricamento delle auto")
+
+async def servizi_stats_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ try:
+  stats_mese,stats_oggi=get_servizi_stats()
+  oggi_formattato=datetime.now().strftime('%d/%m/%Y')
+  mese_formattato=datetime.now().strftime('%B %Y')
+  
+  msg=f"🔧 STATISTICHE SERVIZI EXTRA\n\n"
+  msg+=f"📅 OGGI ({oggi_formattato}):\n"
+  
+  servizi_oggi={'ritiro_notturno':0,'garage_10plus':0,'autolavaggio':0}
+  for tipo,count in stats_oggi:
+   servizi_oggi[tipo]=count
+  
+  msg+=f"  🌙 Ritiri notturni: {servizi_oggi['ritiro_notturno']}\n"
+  msg+=f"  🏠 Garage 10+ giorni: {servizi_oggi['garage_10plus']}\n"
+  msg+=f"  🚿 Autolavaggi: {servizi_oggi['autolavaggio']}\n\n"
+  
+  msg+=f"📊 {mese_formattato.upper()}:\n"
+  
+  servizi_mese={'ritiro_notturno':0,'garage_10plus':0,'autolavaggio':0}
+  for tipo,count in stats_mese:
+   servizi_mese[tipo]=count
+  
+  msg+=f"  🌙 Ritiri notturni: {servizi_mese['ritiro_notturno']}\n"
+  msg+=f"  🏠 Garage 10+ giorni: {servizi_mese['garage_10plus']}\n"
+  msg+=f"  🚿 Autolavaggi: {servizi_mese['autolavaggio']}\n\n"
+  
+  totale_oggi=sum(servizi_oggi.values())
+  totale_mese=sum(servizi_mese.values())
+  msg+=f"📈 TOTALI:\n"
+  msg+=f"  🔧 Servizi oggi: {totale_oggi}\n"
+  msg+=f"  📅 Servizi mese: {totale_mese}"
+  
+  await update.message.reply_text(msg)
+ except Exception as e:
+  logging.error(f"Errore servizi_stats: {e}")
+  await update.message.reply_text("❌ Errore durante il caricamento delle statistiche")
 
 async def annulla_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  state=context.user_data.get('state')
@@ -540,14 +644,19 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   cursor.execute('''SELECT id,targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,data_uscita,numero_progressivo,tempo_stimato,ora_accettazione,foto_count,is_ghost FROM auto ORDER BY is_ghost,data_arrivo DESC''')
   auto_data=cursor.fetchall()
   
+  # Estraggo tutti i servizi extra
+  cursor.execute('''SELECT s.id,s.auto_id,a.targa,a.cognome,a.stanza,s.tipo_servizio,s.data_servizio FROM servizi_extra s LEFT JOIN auto a ON s.auto_id=a.id ORDER BY s.data_servizio DESC''')
+  servizi_data=cursor.fetchall()
+  
   # Conto foto per statistiche
   cursor.execute('SELECT COUNT(*) FROM foto')
   total_foto=cursor.fetchone()[0]
   
   conn.close()
   
-  # Genero il contenuto CSV
-  csv_content="ID,Targa,Cognome,Stanza,Numero_Chiave,Note,Stato,Data_Arrivo,Data_Park,Data_Uscita,Numero_Progressivo,Tempo_Stimato,Ora_Accettazione,Foto_Count,Is_Ghost\n"
+  # Genero il contenuto CSV per auto
+  csv_content="=== TABELLA AUTO ===\n"
+  csv_content+="ID,Targa,Cognome,Stanza,Numero_Chiave,Note,Stato,Data_Arrivo,Data_Park,Data_Uscita,Numero_Progressivo,Tempo_Stimato,Ora_Accettazione,Foto_Count,Is_Ghost\n"
   
   for auto in auto_data:
    # Formatto i valori per CSV
@@ -557,6 +666,23 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
      values.append("")
     else:
      # Escape virgole e virgolette per CSV
+     str_value=str(value).replace('"','""')
+     if ',' in str_value or '"' in str_value:
+      values.append(f'"{str_value}"')
+     else:
+      values.append(str_value)
+   csv_content+=",".join(values)+"\n"
+  
+  # Aggiungo sezione servizi extra
+  csv_content+="\n=== TABELLA SERVIZI EXTRA ===\n"
+  csv_content+="ID,Auto_ID,Targa,Cognome,Stanza,Tipo_Servizio,Data_Servizio\n"
+  
+  for servizio in servizi_data:
+   values=[]
+   for value in servizio:
+    if value is None:
+     values.append("")
+    else:
      str_value=str(value).replace('"','""')
      if ',' in str_value or '"' in str_value:
       values.append(f'"{str_value}"')
@@ -584,11 +710,17 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   ghost_total=cursor.fetchone()[0]
   cursor.execute('SELECT COUNT(*) FROM auto WHERE stato="parcheggiata" AND is_ghost=1')
   ghost_parcheggio=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM servizi_extra')
+  total_servizi=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM servizi_extra WHERE strftime("%Y-%m",data_servizio)=?',(mese_corrente,))
+  servizi_mese=cursor.fetchone()[0]
   conn.close()
   
-  csv_content+=f"\n\nSTATISTICHE EXPORT {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+  csv_content+=f"\n\n=== STATISTICHE EXPORT v5.01 ===\n"
+  csv_content+=f"Data Export,{datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
   csv_content+=f"Totale Auto Database,{len(auto_data)}\n"
   csv_content+=f"Totale Foto Database,{total_foto}\n"
+  csv_content+=f"Totale Servizi Extra,{total_servizi}\n"
   csv_content+=f"Auto Normali Entrate Oggi,{entrate_oggi}\n"
   csv_content+=f"Auto Normali Uscite Oggi,{uscite_oggi}\n"
   csv_content+=f"Auto Normali Entrate Mese,{entrate_mese}\n"
@@ -596,6 +728,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   csv_content+=f"Auto Normali In Parcheggio,{in_parcheggio}\n"
   csv_content+=f"Ghost Cars Totali,{ghost_total}\n"
   csv_content+=f"Ghost Cars In Parcheggio,{ghost_parcheggio}\n"
+  csv_content+=f"Servizi Extra Mese Corrente,{servizi_mese}\n"
   
   # Salvo il file temporaneo
   filename=f"carvalet_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -607,7 +740,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    await update.message.reply_document(
     document=f,
     filename=filename,
-    caption=f"📊 EXPORT DATABASE COMPLETO v5.0\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali ({len(auto_data)-ghost_total} normali + {ghost_total} ghost)\n📷 {total_foto} foto totali\n\n💡 Apri con Excel/Calc"
+    caption=f"📊 EXPORT DATABASE COMPLETO v5.01\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali ({len(auto_data)-ghost_total} normali + {ghost_total} ghost)\n📷 {total_foto} foto totali\n🔧 {total_servizi} servizi extra totali\n\n💡 Apri con Excel/Calc"
    )
   
   # Rimuovo il file temporaneo
@@ -859,7 +992,35 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
  await query.answer()
  try:
   data=query.data
-  if data.startswith('recupero_'):
+  if data.startswith('servizi_auto_'):
+   auto_id=int(data.split('_')[2])
+   auto=get_auto_by_id(auto_id)
+   if not auto:
+    await query.edit_message_text("❌ Auto non trovata")
+    return
+   keyboard=[
+    [InlineKeyboardButton("🌙 Ritiro Notturno",callback_data=f"servizio_{auto_id}_ritiro_notturno")],
+    [InlineKeyboardButton("🏠 Garage 10+ giorni",callback_data=f"servizio_{auto_id}_garage_10plus")],
+    [InlineKeyboardButton("🚿 Autolavaggio",callback_data=f"servizio_{auto_id}_autolavaggio")]
+   ]
+   reply_markup=InlineKeyboardMarkup(keyboard)
+   ghost_text=" 👻" if auto[14] else ""
+   await query.edit_message_text(f"🔧 SERVIZI EXTRA\n\n🚗 {auto[1]} - Stanza {auto[3]}{ghost_text}\n👤 Cliente: {auto[2]}\n\nSeleziona il servizio completato:",reply_markup=reply_markup)
+  elif data.startswith('servizio_'):
+   parts=data.split('_')
+   auto_id=int(parts[1])
+   tipo_servizio='_'.join(parts[2:])
+   auto=get_auto_by_id(auto_id)
+   if not auto:
+    await query.edit_message_text("❌ Auto non trovata")
+    return
+   if aggiungi_servizio_extra(auto_id,tipo_servizio):
+    servizio_names={'ritiro_notturno':'🌙 Ritiro Notturno','garage_10plus':'🏠 Garage 10+ giorni','autolavaggio':'🚿 Autolavaggio'}
+    servizio_nome=servizio_names.get(tipo_servizio,'🔧 Servizio Extra')
+    ghost_text=" 👻" if auto[14] else ""
+    await query.edit_message_text(f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}{ghost_text}\n👤 Cliente: {auto[2]}\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+   else:await query.edit_message_text("❌ Errore durante la registrazione del servizio")
+  elif data.startswith('recupero_'):
    parts=data.split('_')
    auto_id=int(parts[1])
    tipo_operazione=parts[2] if len(parts)>2 else 'richiesta'
@@ -1065,6 +1226,8 @@ def main():
   application.add_handler(CommandHandler("start",start))
   application.add_handler(CommandHandler("help",help_command))
   application.add_handler(CommandHandler("annulla",annulla_command))
+  application.add_handler(CommandHandler("servizi",servizi_command))
+  application.add_handler(CommandHandler("servizi_stats",servizi_stats_command))
   application.add_handler(CommandHandler("vedi_foto",vedi_foto_command))
   application.add_handler(CommandHandler("vedi_recupero",vedi_recupero_command))
   application.add_handler(CommandHandler("ritiro",ritiro_command))
@@ -1084,10 +1247,10 @@ def main():
   application.add_handler(CallbackQueryHandler(handle_callback_query))
   logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   logging.info("✅ Sistema gestione auto hotel PROFESSIONALE")
-  logging.info("🔧 v5.0 FINAL: +Ghost Cars +Auto già parcheggiate - SISTEMA COMPLETO")
+  logging.info("🔧 v5.01: +Servizi Extra (Ritiro notturno, Garage 10+, Autolavaggio)")
   print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   print("✅ Sistema gestione auto hotel PROFESSIONALE")
-  print("🔧 v5.0 FINAL: +Ghost Cars +Auto già parcheggiate - SISTEMA COMPLETO")
+  print("🔧 v5.01: +Servizi Extra (Ritiro notturno, Garage 10+, Autolavaggio)")
   application.run_polling(allowed_updates=Update.ALL_TYPES)
  except Exception as e:
   logging.error(f"Errore durante l'avvio del bot: {e}")
