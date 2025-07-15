@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# CarValetBOT v4.3 LIGHT by Zibroncloud
+# CarValetBOT v4.6 LIGHT by Zibroncloud
 import os,logging,sqlite3,re
 from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
@@ -103,14 +103,13 @@ By Zibroncloud
 /vedi_recupero - Stato recuperi in corso
 /riconsegna - Lista auto per riconsegna temporanea
 /rientro - Richiesta rientro auto in stand-by
-/partenza - Riconsegna finale (uscita definitiva)
 
 🚗 COMANDI VALET:
 /recupero - Gestione recuperi (ritiri/riconsegne/rientri)
 /foto - Carica foto auto
 /vedi_foto - Visualizza foto auto
 /park - Conferma auto parcheggiata
-/exit - Auto in riconsegna (da qualunque stato dopo ritiro) (da qualunque stato)
+/partito - Auto uscita definitiva (da qualunque stato)
 /modifica - Modifica TUTTI i dati auto
 
 📊 COMANDI UTILITÀ:
@@ -301,24 +300,25 @@ async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   logging.error(f"Errore rientro: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto")
 
-async def partenza_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+async def partito_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  try:
   conn=sqlite3.connect('carvalet.db')
   cursor=conn.cursor()
-  cursor.execute('SELECT id,targa,cognome,stanza,numero_chiave FROM auto WHERE stato IN ("riconsegna","stand-by") ORDER BY stanza')
+  cursor.execute('SELECT id,targa,cognome,stanza,stato FROM auto WHERE stato IN ("ritiro","parcheggiata","stand-by","rientro","riconsegna") ORDER BY stanza')
   auto_list=cursor.fetchall()
   conn.close()
   if not auto_list:
-   await update.message.reply_text("📋 Nessuna auto pronta per partenza definitiva")
+   await update.message.reply_text("📋 Nessuna auto disponibile per uscita definitiva")
    return
   keyboard=[]
+  emoji_map={'ritiro':"⚙️",'parcheggiata':"🅿️",'stand-by':"⏸️",'rientro':"🔄",'riconsegna':"🚪"}
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){chiave_text}",callback_data=f"partenza_{auto[0]}")])
+   emoji=emoji_map.get(auto[4],"❓")
+   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}) - {auto[4]}",callback_data=f"partito_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
-  await update.message.reply_text("🏁 PARTENZA DEFINITIVA\n\nSeleziona l'auto:",reply_markup=reply_markup)
+  await update.message.reply_text("🏁 USCITA DEFINITIVA AUTO\n\nSeleziona l'auto da far partire definitivamente:",reply_markup=reply_markup)
  except Exception as e:
-  logging.error(f"Errore partenza: {e}")
+  logging.error(f"Errore partito: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto")
 
 async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -380,27 +380,6 @@ async def park_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text("🅿️ CONFERMA PARCHEGGIO\n\nSeleziona l'auto parcheggiata:",reply_markup=reply_markup)
  except Exception as e:
   logging.error(f"Errore park: {e}")
-  await update.message.reply_text("❌ Errore durante il caricamento delle auto")
-
-async def exit_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- try:
-  conn=sqlite3.connect('carvalet.db')
-  cursor=conn.cursor()
-  cursor.execute('SELECT id,targa,cognome,stanza,stato FROM auto WHERE stato IN ("ritiro","parcheggiata","stand-by","rientro","riconsegna") ORDER BY stanza')
-  auto_list=cursor.fetchall()
-  conn.close()
-  if not auto_list:
-   await update.message.reply_text("📋 Nessuna auto disponibile per exit")
-   return
-  keyboard=[]
-  emoji_map={'ritiro':"⚙️",'parcheggiata':"🅿️",'stand-by':"⏸️",'rientro':"🔄",'riconsegna':"🚪"}
-  for auto in auto_list:
-   emoji=emoji_map.get(auto[4],"❓")
-   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}) - {auto[4]}",callback_data=f"exit_{auto[0]}")])
-  reply_markup=InlineKeyboardMarkup(keyboard)
-  await update.message.reply_text("🚪 AUTO IN RICONSEGNA\n\nSeleziona l'auto (da qualunque stato):",reply_markup=reply_markup)
- except Exception as e:
-  logging.error(f"Errore exit: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento delle auto")
 
 async def modifica_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -734,15 +713,6 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if update_auto_stato(auto_id,'rientro'):
     await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\n⏰ Ora il valet deve confermare il rientro\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
    else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
-  elif data.startswith('partenza_'):
-   auto_id=int(data.split('_')[1])
-   auto=get_auto_by_id(auto_id)
-   if not auto:
-    await query.edit_message_text("❌ Auto non trovata")
-    return
-   if update_auto_stato(auto_id,'uscita'):
-    await query.edit_message_text(f"🏁 PARTENZA CONFERMATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n✅ Auto uscita definitivamente\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
-   else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
   elif data.startswith('foto_'):
    auto_id=int(data.split('_')[1])
    auto=get_auto_by_id(auto_id)
@@ -857,10 +827,10 @@ def main():
   application.add_handler(CallbackQueryHandler(handle_callback_query))
   logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   logging.info("✅ Sistema gestione auto hotel attivo")
-  logging.info("🔧 v4.3 LIGHT: +Sistema Rientro Auto Completo")
+  logging.info("🔧 v4.6 LIGHT: Comando /partito unificato - sostituisce /partenza ed /exit")
   print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   print("✅ Sistema gestione auto hotel attivo")
-  print("🔧 v4.3 LIGHT: +Sistema Rientro Auto Completo")
+  print("🔧 v4.6 LIGHT: Comando /partito unificato - sostituisce /partenza ed /exit")
   application.run_polling(allowed_updates=Update.ALL_TYPES)
  except Exception as e:
   logging.error(f"Errore durante l'avvio del bot: {e}")
