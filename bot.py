@@ -5,7 +5,7 @@ from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.6 LIGHT"
+BOT_VERSION="4.7 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -114,6 +114,7 @@ By Zibroncloud
 
 📊 COMANDI UTILITÀ:
 /lista_auto - Auto in parcheggio + statistiche
+/export - Esporta database in CSV per Excel
 
 ❓ COMANDI AIUTO:
 /help - Mostra questa guida
@@ -142,6 +143,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 📊 COMANDI UTILITÀ:
 /lista_auto - Auto in parcheggio + statistiche giornaliere/mensili
+/export - Esporta database completo in CSV per Excel
 
 ❓ COMANDI AIUTO:
 /start - Messaggio di benvenuto
@@ -453,6 +455,88 @@ async def lista_auto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  except Exception as e:
   logging.error(f"Errore lista_auto: {e}")
   await update.message.reply_text("❌ Errore durante il caricamento della lista")
+
+async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ try:
+  await update.message.reply_text("📊 EXPORT DATABASE\n\n⏳ Generazione file CSV in corso...")
+  
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  
+  # Estraggo tutti i dati delle auto
+  cursor.execute('''SELECT id,targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,data_uscita,numero_progressivo,tempo_stimato,ora_accettazione,foto_count FROM auto ORDER BY data_arrivo DESC''')
+  auto_data=cursor.fetchall()
+  
+  # Conto foto per statistiche
+  cursor.execute('SELECT COUNT(*) FROM foto')
+  total_foto=cursor.fetchone()[0]
+  
+  conn.close()
+  
+  # Genero il contenuto CSV
+  csv_content="ID,Targa,Cognome,Stanza,Numero_Chiave,Note,Stato,Data_Arrivo,Data_Park,Data_Uscita,Numero_Progressivo,Tempo_Stimato,Ora_Accettazione,Foto_Count\n"
+  
+  for auto in auto_data:
+   # Formatto i valori per CSV
+   values=[]
+   for value in auto:
+    if value is None:
+     values.append("")
+    else:
+     # Escape virgole e virgolette per CSV
+     str_value=str(value).replace('"','""')
+     if ',' in str_value or '"' in str_value:
+      values.append(f'"{str_value}"')
+     else:
+      values.append(str_value)
+   csv_content+=",".join(values)+"\n"
+  
+  # Aggiungo statistiche in fondo
+  oggi=date.today().strftime('%Y-%m-%d')
+  mese_corrente=date.today().strftime('%Y-%m')
+  
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=?',(oggi,))
+  entrate_oggi=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE date(data_uscita)=? AND stato="uscita"',(oggi,))
+  uscite_oggi=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_arrivo)=?',(mese_corrente,))
+  entrate_mese=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_uscita)=? AND stato="uscita"',(mese_corrente,))
+  uscite_mese=cursor.fetchone()[0]
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE stato="parcheggiata"')
+  in_parcheggio=cursor.fetchone()[0]
+  conn.close()
+  
+  csv_content+=f"\n\nSTATISTICHE EXPORT {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+  csv_content+=f"Totale Auto Database,{len(auto_data)}\n"
+  csv_content+=f"Totale Foto Database,{total_foto}\n"
+  csv_content+=f"Auto Entrate Oggi,{entrate_oggi}\n"
+  csv_content+=f"Auto Uscite Oggi,{uscite_oggi}\n"
+  csv_content+=f"Auto Entrate Mese,{entrate_mese}\n"
+  csv_content+=f"Auto Uscite Mese,{uscite_mese}\n"
+  csv_content+=f"Auto In Parcheggio,{in_parcheggio}\n"
+  
+  # Salvo il file temporaneo
+  filename=f"carvalet_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+  with open(filename,'w',encoding='utf-8') as f:
+   f.write(csv_content)
+  
+  # Invio il file
+  with open(filename,'rb') as f:
+   await update.message.reply_document(
+    document=f,
+    filename=filename,
+    caption=f"📊 EXPORT DATABASE COMPLETO\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali\n📷 {total_foto} foto totali\n\n💡 Apri con Excel/Calc"
+   )
+  
+  # Rimuovo il file temporaneo
+  os.remove(filename)
+  
+ except Exception as e:
+  logging.error(f"Errore export: {e}")
+  await update.message.reply_text("❌ Errore durante l'export del database")
 
 async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
  try:
@@ -822,6 +906,7 @@ def main():
   application.add_handler(CommandHandler("park",park_command))
   application.add_handler(CommandHandler("modifica",modifica_command))
   application.add_handler(CommandHandler("lista_auto",lista_auto_command))
+  application.add_handler(CommandHandler("export",export_command))
   application.add_handler(MessageHandler(filters.TEXT&~filters.COMMAND,handle_message))
   application.add_handler(MessageHandler(filters.PHOTO,handle_photo))
   application.add_handler(CallbackQueryHandler(handle_callback_query))
