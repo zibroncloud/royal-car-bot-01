@@ -5,7 +5,7 @@ from datetime import datetime,date
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="4.0 LIGHT"
+BOT_VERSION="4.1 LIGHT"
 BOT_NAME="CarValetBOT"
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
@@ -13,12 +13,23 @@ def init_db():
  try:
   conn=sqlite3.connect('carvalet.db')
   cursor=conn.cursor()
-  cursor.execute('''CREATE TABLE IF NOT EXISTS auto (id INTEGER PRIMARY KEY AUTOINCREMENT,targa TEXT NOT NULL,cognome TEXT NOT NULL,stanza INTEGER NOT NULL,numero_chiave INTEGER,note TEXT,stato TEXT DEFAULT 'richiesta',data_arrivo DATE DEFAULT CURRENT_DATE,data_park DATE,data_uscita DATE,foto_count INTEGER DEFAULT 0)''')
+  cursor.execute('''CREATE TABLE IF NOT EXISTS auto (id INTEGER PRIMARY KEY AUTOINCREMENT,targa TEXT NOT NULL,cognome TEXT NOT NULL,stanza INTEGER NOT NULL,numero_chiave INTEGER,note TEXT,stato TEXT DEFAULT 'richiesta',data_arrivo DATE DEFAULT CURRENT_DATE,data_park DATE,data_uscita DATE,foto_count INTEGER DEFAULT 0,numero_progressivo INTEGER,tempo_stimato TEXT,ora_accettazione TIMESTAMP)''')
   cursor.execute('''CREATE TABLE IF NOT EXISTS foto (id INTEGER PRIMARY KEY AUTOINCREMENT,auto_id INTEGER,file_id TEXT NOT NULL,data_upload TIMESTAMP DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (auto_id) REFERENCES auto (id))''')
   conn.commit()
   conn.close()
   logging.info("Database inizializzato")
  except Exception as e:logging.error(f"Errore DB: {e}")
+
+def get_prossimo_numero():
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  oggi=date.today().strftime('%Y-%m-%d')
+  cursor.execute('SELECT MAX(numero_progressivo) FROM auto WHERE date(data_arrivo)=?',(oggi,))
+  result=cursor.fetchone()
+  conn.close()
+  return (result[0] or 0)+1
+ except:return 1
 
 init_db()
 
@@ -89,6 +100,7 @@ By Zibroncloud
 
 🏨 COMANDI HOTEL:
 /ritiro - Richiesta ritiro auto
+/vedi_recupero - Stato recuperi in corso
 /riconsegna - Lista auto per riconsegna  
 /partenza - Riconsegna finale (uscita)
 
@@ -116,11 +128,12 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 🏨 COMANDI HOTEL:
 /ritiro - Crea nuova richiesta ritiro auto
+/vedi_recupero - Vedi stato recuperi con tempi stimati
 /riconsegna - Seleziona auto da riconsegnare
 /partenza - Conferma partenza definitiva
 
 🚗 COMANDI VALET:
-/recupero - Inizia ritiro auto richiesta
+/recupero - Inizia ritiro auto richiesta (con priorità)
 /foto - Carica foto dell'auto
 /vedi_foto - Visualizza foto per auto/cliente
 /park - Conferma auto parcheggiata
@@ -137,18 +150,20 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 📋 WORKFLOW TIPICO:
 1️⃣ Hotel: /ritiro (inserisci targa, cognome, stanza)
-2️⃣ Valet: /recupero (seleziona auto e tempo)
-3️⃣ Valet: /park (conferma parcheggio)
-4️⃣ Hotel: /riconsegna (richiesta riconsegna)
-5️⃣ Hotel: /partenza (conferma uscita)
+2️⃣ Valet: /recupero (seleziona auto e tempo) - auto numerate per priorità
+3️⃣ Hotel: /vedi_recupero (controlla stato e tempi)
+4️⃣ Valet: /park (conferma parcheggio)
+5️⃣ Hotel: /riconsegna (richiesta riconsegna)
+6️⃣ Hotel: /partenza (conferma uscita)
 
 🎯 STATI AUTO:
-richiesta - Appena creata
-ritiro - Valet sta recuperando
+richiesta - Appena creata (numerata per priorità)
+ritiro - Valet sta recuperando (con tempo stimato)
 parcheggiata - In parcheggio
 riconsegna - In attesa riconsegna
 uscita - Partita definitivamente
 
+🔢 NUMERAZIONE: Auto numerate giornalmente per priorità
 🔑 RANGE NUMERI: Stanze e chiavi da 0 a 999
 🌍 TARGHE ACCETTATE: Italiane (XX123XX), Europee, con trattini"""
  await update.message.reply_text(msg)
@@ -404,15 +419,16 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    cognome=context.user_data['cognome']
    stanza=context.user_data['stanza']
    numero_chiave=context.user_data.get('numero_chiave')
+   numero_progressivo=get_prossimo_numero()
    try:
     conn=sqlite3.connect('carvalet.db')
     cursor=conn.cursor()
-    cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note) VALUES (?,?,?,?,?)''',(targa,cognome,stanza,numero_chiave,note))
+    cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,numero_progressivo) VALUES (?,?,?,?,?,?)''',(targa,cognome,stanza,numero_chiave,note,numero_progressivo))
     auto_id=cursor.lastrowid
     conn.commit()
     conn.close()
     context.user_data.clear()
-    recap_msg=f"✅ RICHIESTA CREATA!\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
+    recap_msg=f"✅ RICHIESTA CREATA!\n\n🆔 ID: {auto_id}\n🔢 Numero: #{numero_progressivo}\n🚗 Targa: {targa}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}"
     if numero_chiave is not None:recap_msg+=f"\n🔑 Chiave: {numero_chiave}"
     if note:recap_msg+=f"\n📝 Note: {note}"
     recap_msg+=f"\n\n📅 Richiesta del {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
@@ -537,9 +553,16 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:
     await query.edit_message_text("❌ Auto non trovata")
     return
-   if update_auto_stato(auto_id,'ritiro'):
-    await query.edit_message_text(f"✅ RITIRO AVVIATO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
-   else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
+   try:
+    conn=sqlite3.connect('carvalet.db')
+    cursor=conn.cursor()
+    cursor.execute('UPDATE auto SET stato=?,tempo_stimato=?,ora_accettazione=CURRENT_TIMESTAMP WHERE id=?',('ritiro',minuti,auto_id))
+    conn.commit()
+    conn.close()
+    await query.edit_message_text(f"✅ RITIRO AVVIATO!\n\n🔢 Auto #{auto[11]} (cronologica)\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n⏰ Tempo stimato: {minuti} minuti\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+   except Exception as e:
+    logging.error(f"Errore aggiornamento tempo: {e}")
+    await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
   elif data.startswith('park_'):
    auto_id=int(data.split('_')[1])
    auto=get_auto_by_id(auto_id)
@@ -547,7 +570,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     await query.edit_message_text("❌ Auto non trovata")
     return
    if update_auto_stato(auto_id,'parcheggiata'):
-    await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
+    await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n🔢 Auto #{auto[11]} completata\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n\n⏰ {datetime.now().strftime('%d/%m/%Y alle %H:%M')}")
    else:await query.edit_message_text("❌ Errore durante l'aggiornamento dello stato")
   elif data.startswith('exit_'):
    auto_id=int(data.split('_')[1])
@@ -675,6 +698,7 @@ def main():
   application.add_handler(CommandHandler("help",help_command))
   application.add_handler(CommandHandler("annulla",annulla_command))
   application.add_handler(CommandHandler("vedi_foto",vedi_foto_command))
+  application.add_handler(CommandHandler("vedi_recupero",vedi_recupero_command))
   application.add_handler(CommandHandler("ritiro",ritiro_command))
   application.add_handler(CommandHandler("riconsegna",riconsegna_command))
   application.add_handler(CommandHandler("partenza",partenza_command))
@@ -689,10 +713,10 @@ def main():
   application.add_handler(CallbackQueryHandler(handle_callback_query))
   logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   logging.info("✅ Sistema gestione auto hotel attivo")
-  logging.info("🔧 v4.0 LIGHT: Versione ottimizzata -30% codice")
+  logging.info("🔧 v4.1 LIGHT: +Numerazione auto +Stato recuperi")
   print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   print("✅ Sistema gestione auto hotel attivo")
-  print("🔧 v4.0 LIGHT: Versione ottimizzata -30% codice")
+  print("🔧 v4.1 LIGHT: +Numerazione auto +Stato recuperi")
   application.run_polling(allowed_updates=Update.ALL_TYPES)
  except Exception as e:
   logging.error(f"Errore durante l'avvio del bot: {e}")
