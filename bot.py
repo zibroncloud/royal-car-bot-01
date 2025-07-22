@@ -123,6 +123,7 @@ By Zibroncloud
 
 🚗 VALET:
 /recupero - Gestione recuperi
+/completa - Completa dati auto (prima O dopo /park)
 /park - Auto parcheggiata  
 /partito - Uscita definitiva
 
@@ -134,7 +135,7 @@ By Zibroncloud
 
 ❓ /help /annulla
 
-🆕 v5.04: Codice ottimizzato, deep link canale, notifiche avanzate"""
+🆕 v5.04: Codice ottimizzato, deep link canale, notifiche avanzate, /completa workflow"""
  await update.message.reply_text(msg)
 
 async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -152,17 +153,23 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   🚗 Targa HOTEL001, HOTEL002...
   🔢 Numero progressivo
 
-🚗 VALET (PRINCIPALI):
-/recupero - Gestisci tutti i recuperi
-/park - Conferma parcheggio
-/partito - Uscita definitiva
+🚗 VALET (WORKFLOW FLESSIBILE):
+1️⃣ /recupero - Gestisci recupero dall'hotel
+2️⃣ /completa - Completa dati auto (OPZIONALE):
+   • Targa reale (sostituisce HOTEL001)
+   • Numero BOX
+   • Foto opzionali (skip se hai tempo)
+3️⃣ /park - Conferma auto parcheggiata
+4️⃣ /partito - Uscita definitiva
 
-🔧 EXTRA:
-/foto /vedi_foto - Gestione foto
+💡 /completa può essere usato PRIMA o DOPO /park!
+
+🔧 ALTRI COMANDI:
+/foto /vedi_foto - Gestione foto separata
 /servizi /servizi_stats - Servizi extra
 /prenota /mostra_prenotazioni - Prenotazioni
 /riconsegna /rientro - Riconsegne/rientri
-/modifica - Modifica dati
+/modifica - Modifica singoli campi
 /lista_auto /export - Statistiche
 /vedi_recupero - Stato recuperi
 /ghostcar /makepark - Auto speciali
@@ -172,7 +179,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 • In coda (altri ritiri prima)
 • Possibile ritardo (traffico/lavori)
 
-📱 WORKFLOW: Hotel /ritiro → Notifica canale → Valet click → Recupero automatico"""
+📱 WORKFLOW FLESSIBILE: Hotel /ritiro → Notifica canale → Valet click → Recupero automatico → /completa (opzionale, prima O dopo) → /park → AUTO COMPLETATA! 🎯"""
  await update.message.reply_text(msg)
 
 # ===== HOTEL COMMANDS =====
@@ -271,6 +278,18 @@ async def handle_recupero_specifico(update,context,auto_id,tipo_op):
 
 async def park_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"park","🅿️ CONFERMA PARCHEGGIO","stato='ritiro'")
+
+async def completa_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ """Completa dati auto: targa reale + BOX + foto (prima O dopo /park)"""
+ auto_list=db_query('SELECT id,targa,cognome,stanza,numero_chiave,stato FROM auto WHERE stato IN ("ritiro","parcheggiata") AND targa LIKE "HOTEL%" ORDER BY stato,targa')
+ if not auto_list:await update.message.reply_text("📋 Nessuna auto da completare\n\nComando utile per auto con targa automatica (HOTEL001, HOTEL002...)");return
+ keyboard=[]
+ emoji_map={'ritiro':'⚙️','parcheggiata':'🅿️'}
+ for auto in auto_list:
+  box_text=f" - BOX: {auto[4]}" if auto[4] else " - BOX: da inserire"
+  stato_emoji=emoji_map.get(auto[5],"❓")
+  keyboard.append([InlineKeyboardButton(f"{stato_emoji} {auto[1]} - Stanza {auto[3]} ({auto[2]}){box_text}",callback_data=f"completa_{auto[0]}")])
+ await update.message.reply_text("🔧 COMPLETA DATI AUTO\n\nWorkflow: Targa reale → BOX → Foto (opzionale)\n⚙️ = In ritiro | 🅿️ = Parcheggiata\n\nSeleziona auto:",reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def partito_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"partito","🏁 USCITA DEFINITIVA","stato IN ('ritiro','parcheggiata','stand-by','rientro','riconsegna')")
@@ -408,6 +427,16 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    if auto_id:auto=get_auto_by_id(auto_id);await update.message.reply_text(f"📷 Upload completato! {auto[1]} - Stanza {auto[3]}")
    context.user_data.clear()
   else:await update.message.reply_text("📷 Invia foto o scrivi 'fine'")
+  
+ elif state.startswith('completa_foto_'):
+  if text.lower() in ['fine','skip']:
+   auto_id=int(state.split('_')[2])
+   auto=get_auto_by_id(auto_id)
+   foto_count=auto[9] if auto[9] else 0
+   await update.message.reply_text(f"✅ AUTO COMPLETATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📦 BOX: {auto[4] or 'Non assegnato'}\n📷 Foto: {foto_count} caricate\n\n🎯 Dati completati con successo!")
+   context.user_data.clear()
+  else:
+   await update.message.reply_text("📷 Invia foto dell'auto o scrivi 'fine'/'skip' per terminare")
  
  # Gestione ghost car e makepark
  elif state in['ghost_targa','makepark_targa']:
@@ -456,6 +485,44 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    await update.message.reply_text(f"👻 GHOST CAR REGISTRATA!\n\n🆔 ID: {auto_id}\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
   context.user_data.clear()
  
+ # Gestione workflow completa
+ elif state.startswith('completa_targa_'):
+  auto_id=int(state.split('_')[2])
+  if not validate_targa(text):await update.message.reply_text("❌ Targa non valida! Inserisci targa reale:");return
+  # Aggiorna targa
+  if db_query('UPDATE auto SET targa=? WHERE id=?',(text.upper(),auto_id),'none'):
+   auto=get_auto_by_id(auto_id)
+   await update.message.reply_text(f"✅ Targa aggiornata: {text.upper()}\n\n📦 Ora inserisci il numero BOX (0-999) o 'skip':")
+   context.user_data['state']=f'completa_box_{auto_id}'
+  else:await update.message.reply_text("❌ Errore aggiornamento targa");context.user_data.clear()
+  
+ elif state.startswith('completa_box_'):
+  auto_id=int(state.split('_')[2])
+  if text.lower()=='skip':
+   box_value=None
+   await update.message.reply_text("📦 BOX non assegnato\n\n📷 Vuoi caricare foto? Invia foto o scrivi 'skip' per terminare:")
+  else:
+   try:
+    box_value=int(text)
+    if not 0<=box_value<=999:await update.message.reply_text("❌ BOX 0-999 o 'skip'!");return
+    await update.message.reply_text(f"✅ BOX assegnato: {box_value}\n\n📷 Vuoi caricare foto? Invia foto o scrivi 'skip' per terminare:")
+   except:await update.message.reply_text("❌ BOX numero valido o 'skip'!");return
+  
+  # Aggiorna BOX
+  if db_query('UPDATE auto SET numero_chiave=? WHERE id=?',(box_value,auto_id),'none'):
+   context.user_data['state']=f'completa_foto_{auto_id}'
+   context.user_data['foto_auto_id']=auto_id
+  else:await update.message.reply_text("❌ Errore aggiornamento BOX");context.user_data.clear()
+  
+ elif state.startswith('completa_foto_'):
+  auto_id=int(state.split('_')[2])
+  if text.lower()=='skip':
+   auto=get_auto_by_id(auto_id)
+   await update.message.reply_text(f"✅ AUTO COMPLETATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📦 BOX: {auto[4] or 'Non assegnato'}\n📷 Foto: Non caricate\n\n🎯 Dati completati con successo!")
+   context.user_data.clear()
+  else:
+   await update.message.reply_text("📷 Invia foto dell'auto o scrivi 'skip' per terminare")
+  
  # Gestione modifiche
  elif state.startswith('mod_'):
   await handle_modifica(update,context,state,text)
@@ -489,14 +556,21 @@ async def handle_modifica(update,context,state,text):
 
 # ===== PHOTO HANDLER =====
 async def handle_photo(update:Update,context:ContextTypes.DEFAULT_TYPE):
- if context.user_data.get('state')=='upload_foto':
+ state=context.user_data.get('state')
+ if state=='upload_foto' or state.startswith('completa_foto_'):
   auto_id=context.user_data.get('foto_auto_id')
   if auto_id:
    file_id=update.message.photo[-1].file_id
    db_query('INSERT INTO foto (auto_id,file_id) VALUES (?,?)',(auto_id,file_id),'none')
    db_query('UPDATE auto SET foto_count=foto_count+1 WHERE id=?',(auto_id,),'none')
    count=db_query('SELECT foto_count FROM auto WHERE id=?',(auto_id,),'one')[0]
-   await update.message.reply_text(f"📷 Foto #{count} salvata! Altre foto o 'fine'")
+   
+   if state.startswith('completa_foto_'):
+    await update.message.reply_text(f"📷 Foto #{count} salvata!\n\nInvia altre foto o scrivi 'fine' per completare l'auto")
+   else:
+    await update.message.reply_text(f"📷 Foto #{count} salvata! Altre foto o 'fine'")
+ else:
+  await update.message.reply_text("📷 Per caricare foto, usa /foto o /completa")
 
 # ===== CALLBACK HANDLER =====
 async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -618,6 +692,13 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    servizio_nome=servizio_names.get(tipo_servizio,'🔧 Servizio Extra')
    await query.edit_message_text(f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}")
  
+ # Completa dati auto
+ elif data.startswith('completa_'):
+  auto_id=int(data.split('_')[1])
+  auto=get_auto_by_id(auto_id)
+  context.user_data['state']=f'completa_targa_{auto_id}'
+  await query.edit_message_text(f"🔧 COMPLETA AUTO - Passo 1/3\n\n🚗 Targa attuale: {auto[1]}\n👤 Cliente: {auto[2]} - Stanza {auto[3]}\n\n🚗 Inserisci la TARGA REALE dell'auto:")
+ 
  # Modifiche
  elif data.startswith('modifica_'):
   auto_id=int(data.split('_')[1])
@@ -652,7 +733,7 @@ def main():
   ("ritiro",ritiro_command),("prenota",prenota_command),("mostra_prenotazioni",mostra_prenotazioni_command),
   ("riconsegna",riconsegna_command),("rientro",rientro_command),("vedi_recupero",vedi_recupero_command),
   ("ghostcar",ghostcar_command),("makepark",makepark_command),
-  ("recupero",recupero_command),("park",park_command),("partito",partito_command),
+  ("recupero",recupero_command),("park",park_command),("completa",completa_command),("partito",partito_command),
   ("foto",foto_command),("vedi_foto",vedi_foto_command),("servizi",servizi_command),("servizi_stats",servizi_stats_command),
   ("modifica",modifica_command),("lista_auto",lista_auto_command),("export",export_command)
  ]
