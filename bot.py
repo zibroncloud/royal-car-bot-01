@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-# CarValetBOT v5.02 COMPLETA by Zibroncloud
+# CarValetBOT v5.03 FINALE by Zibroncloud - RITIRO SEMPLIFICATO + NOTIFICHE CANALE + BOX
 import os,logging,sqlite3,re
 from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="5.02"
+BOT_VERSION="5.03"
 BOT_NAME="CarValetBOT"
+CANALE_VALET="-1002582736358"  # ID del canale per le notifiche ai Valet
+
 logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',level=logging.INFO)
 
 def init_db():
@@ -32,6 +34,45 @@ def get_prossimo_numero():
   conn.close()
   return (result[0] or 0)+1
  except:return 1
+
+def genera_targa_hotel():
+ """Genera una targa automatica per le richieste hotel (HOTEL001, HOTEL002, etc.)"""
+ try:
+  conn=sqlite3.connect('carvalet.db')
+  cursor=conn.cursor()
+  oggi=date.today().strftime('%Y-%m-%d')
+  # Conta quante auto hotel sono state create oggi
+  cursor.execute('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=? AND targa LIKE "HOTEL%"',(oggi,))
+  count=cursor.fetchone()[0]
+  conn.close()
+  return f"HOTEL{count+1:03d}"  # HOTEL001, HOTEL002, etc.
+ except:
+  return f"HOTEL{datetime.now().strftime('%H%M')}"  # Fallback con ora
+
+async def invia_notifica_canale(context:ContextTypes.DEFAULT_TYPE,auto_id,cognome,stanza,numero_progressivo):
+ """Invia notifica al canale Valet quando viene creata una nuova richiesta"""
+ try:
+  msg=f"🚗 NUOVA RICHIESTA RITIRO!\n\n"
+  msg+=f"👤 Cliente: {cognome}\n"
+  msg+=f"🏨 Stanza: {stanza}\n"
+  msg+=f"🔢 Numero: #{numero_progressivo}\n"
+  msg+=f"📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n\n"
+  msg+=f"👆 Tocca qui per gestire → @{context.bot.username}"
+  
+  # Bottone per andare direttamente al bot
+  keyboard=[[InlineKeyboardButton("⚙️ Gestisci Richiesta",url=f"https://t.me/{context.bot.username}")]]
+  reply_markup=InlineKeyboardMarkup(keyboard)
+  
+  await context.bot.send_message(
+   chat_id=CANALE_VALET,
+   text=msg,
+   reply_markup=reply_markup
+  )
+  logging.info(f"Notifica inviata al canale per auto ID {auto_id}")
+  return True
+ except Exception as e:
+  logging.error(f"Errore invio notifica canale: {e}")
+  return False
 
 def aggiungi_servizio_extra(auto_id,tipo_servizio):
  try:
@@ -172,8 +213,8 @@ async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
  msg=f"""🚗 {BOT_NAME} v{BOT_VERSION}
 By Zibroncloud
 
-🏨 COMANDI HOTEL:
-/ritiro - Richiesta ritiro auto
+🏨 COMANDI HOTEL (SEMPLIFICATI):
+/ritiro - Richiesta ritiro auto (solo cognome + stanza)
 /prenota - Prenota partenza auto (data/ora)
 /vedi_recupero - Stato recuperi in corso
 /riconsegna - Lista auto per riconsegna temporanea
@@ -200,16 +241,28 @@ By Zibroncloud
 /help - Mostra questa guida
 /annulla - Annulla operazione in corso
 
-🔑 NUMERI: Stanze e chiavi da 0 a 999
-🌍 TARGHE: Italiane ed europee accettate"""
+🆕 v5.03 - NOVITÀ:
+• Ritiro hotel SEMPLIFICATO (solo cognome + stanza)
+• Targa generata automaticamente (HOTEL001, HOTEL002...)
+• Notifiche automatiche al canale Valet
+• Workflow ottimizzato per velocità
+
+🔑 NUMERI: Stanze e BOX da 0 a 999
+📱 NOTIFICHE: Automatiche al canale Valet"""
  await update.message.reply_text(msg)
 
 async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  msg=f"""🚗 {BOT_NAME} v{BOT_VERSION} - GUIDA COMPLETA
 
-🏨 COMANDI HOTEL:
-/ritiro - Crea nuova richiesta ritiro auto
-/prenota - Prenota partenza auto con data/ora specifica
+🆕 NOVITÀ v5.03:
+✅ Ritiro hotel SEMPLIFICATO - solo cognome + stanza!
+✅ Targa auto generata automaticamente (HOTEL001, HOTEL002...)
+✅ Notifiche automatiche al canale Valet
+✅ Workflow super veloce per l'hotel
+
+🏨 COMANDI HOTEL (SEMPLIFICATI):
+/ritiro - Crea richiesta ritiro (SOLO cognome + stanza)
+/prenota - Prenota partenza con data/ora specifica
 /vedi_recupero - Vedi tutti i recuperi con tempi stimati
 /riconsegna - Richiesta riconsegna temporanea
 /rientro - Richiesta rientro auto in stand-by
@@ -221,7 +274,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /vedi_foto - Visualizza foto per auto/cliente
 /park - Conferma auto parcheggiata
 /partito - Uscita definitiva auto (da qualunque stato)
-/modifica - Modifica targa, cognome, stanza, chiave, note
+/modifica - Modifica targa, cognome, stanza, BOX, note
 
 🔧 SERVIZI EXTRA:
 /servizi - Registra servizi aggiuntivi per auto parcheggiate:
@@ -239,9 +292,11 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /help - Questa guida
 /annulla - Annulla operazione in corso
 
-📋 WORKFLOW COMPLETO:
+📋 WORKFLOW SEMPLIFICATO v5.03:
 🔄 CICLO 1 - ARRIVO:
-1️⃣ Hotel: /ritiro → 2️⃣ Valet: /recupero → 3️⃣ Valet: /park
+1️⃣ Hotel: /ritiro → Cognome + Stanza → ✅ FATTO!
+📱 Notifica automatica al canale Valet
+2️⃣ Valet: /recupero → 3️⃣ Valet: /park
 
 🔄 CICLO 2 - RICONSEGNA TEMPORANEA:
 4️⃣ Hotel: /riconsegna → 5️⃣ Valet: /recupero → Auto in stand-by
@@ -252,7 +307,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 🔧 SERVIZI AGGIUNTIVI:
 9️⃣ Valet: /servizi → Seleziona auto parcheggiata → Servizio completato
 
-📅 PRENOTAZIONI PARTENZA (v5.02):
+📅 PRENOTAZIONI PARTENZA:
 🔟 Hotel: /prenota → Seleziona auto → Data/Ora → Prenotazione salvata
 1️⃣1️⃣ Valet: /mostra_prenotazioni → Vede tutte le partenze programmate
 1️⃣2️⃣ Valet: /partito → Uscita definitiva + prenotazione completata
@@ -261,7 +316,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 1️⃣3️⃣ Valet: /partito (da qualunque stato) → Auto eliminata
 
 🎯 STATI AUTO:
-📋 richiesta - Primo ritiro richiesto
+📋 richiesta - Primo ritiro richiesto (con notifica canale)
 ⚙️ ritiro - Valet sta recuperando/riportando
 🅿️ parcheggiata - In parcheggio
 🚪 riconsegna - Riconsegna temporanea richiesta
@@ -270,10 +325,11 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 🏁 uscita - Partita definitivamente
 
 🔢 NUMERAZIONE: Auto numerate giornalmente per priorità
+🚗 TARGHE AUTO: Automatiche (HOTEL001, HOTEL002...)
+📱 NOTIFICHE: Inviate automaticamente al canale Valet
 🔧 SERVIZI EXTRA: Statistiche separate per servizi aggiuntivi
 📅 PRENOTAZIONI: Sistema di prenotazione partenze programmata
-🔑 RANGE NUMERI: Stanze e chiavi da 0 a 999
-🌍 TARGHE ACCETTATE: Italiane (XX123XX), Europee, con trattini"""
+🔑 RANGE NUMERI: Stanze e BOX da 0 a 999"""
  await update.message.reply_text(msg)
 
 async def prenota_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -289,10 +345,10 @@ async def prenota_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   keyboard=[]
   emoji_map={'richiesta':'📋','ritiro':'⚙️','parcheggiata':'🅿️','riconsegna':'🚪','stand-by':'⏸️','rientro':'🔄'}
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[6] else ""
    emoji=emoji_map.get(auto[5],"❓")
-   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"prenota_auto_{auto[0]}")])
+   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"prenota_auto_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("📅 PRENOTA PARTENZA AUTO\n\nSeleziona l'auto per prenotare la partenza:",reply_markup=reply_markup)
  except Exception as e:
@@ -363,9 +419,9 @@ async def servizi_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[5] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"servizi_auto_{auto[0]}")])
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"servizi_auto_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("🔧 SERVIZI EXTRA\n\nSeleziona l'auto per registrare un servizio:",reply_markup=reply_markup)
  except Exception as e:
@@ -491,10 +547,11 @@ async def vedi_recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE)
   await update.message.reply_text("❌ Errore durante il caricamento dei recuperi")
 
 async def ritiro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ """NUOVO comando ritiro semplificato - solo cognome + stanza"""
  context.user_data.clear()
- context.user_data['state']='ritiro_targa'
+ context.user_data['state']='ritiro_cognome_semplice'
  context.user_data['is_ghost']=False
- await update.message.reply_text("🚗 RITIRO AUTO\n\nInserisci la TARGA del veicolo:")
+ await update.message.reply_text("🚗 RITIRO AUTO SEMPLIFICATO v5.03\n\nInserisci il COGNOME del cliente:")
 
 async def ghostcar_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  context.user_data.clear()
@@ -520,9 +577,9 @@ async def riconsegna_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[5] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"riconsegna_{auto[0]}")])
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"riconsegna_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("🚪 RICONSEGNA TEMPORANEA\n\nSeleziona l'auto (tornerà in stand-by):",reply_markup=reply_markup)
  except Exception as e:
@@ -541,9 +598,9 @@ async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[5] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"rientro_{auto[0]}")])
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"rientro_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("🔄 RIENTRO IN PARCHEGGIO\n\nSeleziona l'auto da far rientrare:",reply_markup=reply_markup)
  except Exception as e:
@@ -584,15 +641,15 @@ async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[7] else ""
    if auto[6]=='richiesta':tipo_emoji="📋 RITIRO"
    elif auto[6]=='riconsegna':tipo_emoji="🚪 RICONSEGNA"
    elif auto[6]=='rientro':tipo_emoji="🔄 RIENTRO"
    if auto[7]:
-    keyboard.append([InlineKeyboardButton(f"{tipo_emoji} GHOST - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"recupero_{auto[0]}_{auto[6]}")])
+    keyboard.append([InlineKeyboardButton(f"{tipo_emoji} GHOST - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"recupero_{auto[0]}_{auto[6]}")])
    else:
-    keyboard.append([InlineKeyboardButton(f"{tipo_emoji} #{auto[5]} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"recupero_{auto[0]}_{auto[6]}")])
+    keyboard.append([InlineKeyboardButton(f"{tipo_emoji} #{auto[5]} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"recupero_{auto[0]}_{auto[6]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("⚙️ GESTIONE RECUPERI (Ordine cronologico)\n\nSeleziona l'operazione da gestire:",reply_markup=reply_markup)
  except Exception as e:
@@ -651,9 +708,9 @@ async def modifica_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    return
   keyboard=[]
   for auto in auto_list:
-   chiave_text=f" - Chiave: {auto[4]}" if auto[4] else ""
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
    ghost_text=" 👻" if auto[6] else ""
-   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{chiave_text}",callback_data=f"modifica_{auto[0]}")])
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"modifica_{auto[0]}")])
   reply_markup=InlineKeyboardMarkup(keyboard)
   await update.message.reply_text("✏️ MODIFICA AUTO\n\nSeleziona l'auto da modificare:",reply_markup=reply_markup)
  except Exception as e:
@@ -702,17 +759,17 @@ async def lista_auto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    if auto_list:
     msg+=f"🅿️ AUTO NORMALI IN PARCHEGGIO ({len(auto_list)}):\n\n"
     for auto in auto_list:
-     stanza,cognome,targa,chiave,foto_count=auto
-     chiave_text=f"Chiave: {chiave}" if chiave else "Chiave: --"
+     stanza,cognome,targa,box,foto_count=auto
+     box_text=f"BOX: {box}" if box else "BOX: --"
      foto_text=f" 📷 {foto_count}" if foto_count>0 else ""
-     msg+=f"{stanza} | {cognome} | {targa} | {chiave_text}{foto_text}\n"
+     msg+=f"{stanza} | {cognome} | {targa} | {box_text}{foto_text}\n"
    if ghost_list:
     msg+=f"\n👻 GHOST CARS IN PARCHEGGIO ({len(ghost_list)}):\n\n"
     for auto in ghost_list:
-     stanza,cognome,targa,chiave,foto_count=auto
-     chiave_text=f"Chiave: {chiave}" if chiave else "Chiave: --"
+     stanza,cognome,targa,box,foto_count=auto
+     box_text=f"BOX: {box}" if box else "BOX: --"
      foto_text=f" 📷 {foto_count}" if foto_count>0 else ""
-     msg+=f"{stanza} | {cognome} | {targa} | {chiave_text}{foto_text} 👻\n"
+     msg+=f"{stanza} | {cognome} | {targa} | {box_text}{foto_text} 👻\n"
   await update.message.reply_text(msg)
  except Exception as e:
   logging.error(f"Errore lista_auto: {e}")
@@ -733,7 +790,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   total_foto=cursor.fetchone()[0]
   conn.close()
   csv_content="=== TABELLA AUTO ===\n"
-  csv_content+="ID,Targa,Cognome,Stanza,Numero_Chiave,Note,Stato,Data_Arrivo,Data_Park,Data_Uscita,Numero_Progressivo,Tempo_Stimato,Ora_Accettazione,Foto_Count,Is_Ghost\n"
+  csv_content+="ID,Targa,Cognome,Stanza,Numero_BOX,Note,Stato,Data_Arrivo,Data_Park,Data_Uscita,Numero_Progressivo,Tempo_Stimato,Ora_Accettazione,Foto_Count,Is_Ghost\n"
   for auto in auto_data:
    values=[]
    for value in auto:
@@ -801,7 +858,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   cursor.execute('SELECT COUNT(*) FROM prenotazioni WHERE completata=0')
   prenotazioni_attive=cursor.fetchone()[0]
   conn.close()
-  csv_content+=f"\n\n=== STATISTICHE EXPORT v5.02 ===\n"
+  csv_content+=f"\n\n=== STATISTICHE EXPORT v5.03 ===\n"
   csv_content+=f"Data Export,{datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
   csv_content+=f"Totale Auto Database,{len(auto_data)}\n"
   csv_content+=f"Totale Foto Database,{total_foto}\n"
@@ -823,7 +880,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
    await update.message.reply_document(
     document=f,
     filename=filename,
-    caption=f"📊 EXPORT DATABASE COMPLETO v5.02\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali ({len(auto_data)-ghost_total} normali + {ghost_total} ghost)\n📷 {total_foto} foto totali\n🔧 {total_servizi} servizi extra totali\n📅 {total_prenotazioni} prenotazioni totali ({prenotazioni_attive} attive)\n\n💡 Apri con Excel/Calc"
+    caption=f"📊 EXPORT DATABASE COMPLETO v5.03\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali ({len(auto_data)-ghost_total} normali + {ghost_total} ghost)\n📷 {total_foto} foto totali\n🔧 {total_servizi} servizi extra totali\n📅 {total_prenotazioni} prenotazioni totali ({prenotazioni_attive} attive)\n\n💡 Apri con Excel/Calc"
    )
   os.remove(filename)
  except Exception as e:
@@ -838,7 +895,52 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    if text.lower()=='/annulla':await annulla_command(update,context);return
    elif text.lower()=='/help':await help_command(update,context);return
    elif text.lower()=='/start':await start(update,context);return
-  if state=='prenota_data':
+  
+  # ===== NUOVO WORKFLOW RITIRO SEMPLIFICATO v5.03 =====
+  if state=='ritiro_cognome_semplice':
+   if not validate_cognome(text):
+    await update.message.reply_text("❌ Cognome non valido!\n\nUsa solo lettere, spazi e apostrofi:")
+    return
+   context.user_data['cognome']=text.strip()
+   context.user_data['state']='ritiro_stanza_semplice'
+   await update.message.reply_text("🏨 Inserisci il numero STANZA (0-999):")
+  
+  elif state=='ritiro_stanza_semplice':
+   try:
+    stanza=int(text)
+    if 0<=stanza<=999:
+     # Genera targa automatica e salva subito nel DB
+     targa_auto=genera_targa_hotel()
+     cognome=context.user_data['cognome']
+     numero_progressivo=get_prossimo_numero()
+     
+     try:
+      conn=sqlite3.connect('carvalet.db')
+      cursor=conn.cursor()
+      cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,numero_progressivo,is_ghost) VALUES (?,?,?,?,?,?,?)''',(targa_auto,cognome,stanza,None,'Richiesta hotel semplificata',numero_progressivo,0))
+      auto_id=cursor.lastrowid
+      conn.commit()
+      conn.close()
+      
+      # Messaggio di conferma all'hotel
+      await update.message.reply_text(f"✅ RICHIESTA CREATA!\n\n🆔 ID: {auto_id}\n🚗 Targa: {targa_auto}\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}\n🔢 Numero: #{numero_progressivo}\n\n📅 Registrata il {datetime.now().strftime('%d/%m/%Y alle %H:%M')}\n\n📱 I Valet riceveranno la notifica automaticamente!")
+      
+      # Invia notifica al canale Valet
+      await invia_notifica_canale(context,auto_id,cognome,stanza,numero_progressivo)
+      
+      context.user_data.clear()
+      
+     except Exception as e:
+      logging.error(f"Errore salvataggio ritiro semplice: {e}")
+      await update.message.reply_text("❌ Errore durante il salvataggio")
+      context.user_data.clear()
+    else:
+     await update.message.reply_text("❌ Numero stanza non valido! Inserisci un numero da 0 a 999:")
+   except ValueError:
+    await update.message.reply_text("❌ Inserisci un numero valido per la stanza:")
+  # ===== FINE NUOVO WORKFLOW =====
+  
+  elif state=='prenota_data':
    if not validate_date_format(text):
     await update.message.reply_text("❌ Formato data non valido!\n\nInserisci la data nel formato gg/mm/aaaa\nEsempio: 15/07/2025")
     return
@@ -860,7 +962,7 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    else:
     await update.message.reply_text("❌ Errore durante il salvataggio della prenotazione")
    context.user_data.clear()
-  elif state in ['ritiro_targa','ghost_targa','makepark_targa']:
+  elif state in ['ghost_targa','makepark_targa']:
    targa=text.upper()
    if not validate_targa(targa):
     await update.message.reply_text("❌ Formato targa non valido!\n\nInserisci una targa valida:\n• Italiana: XX123XX\n• Europea: ABC123, 123ABC\n• Con trattini: XX-123-XX")
@@ -868,24 +970,20 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
    context.user_data['targa']=targa
    if state=='makepark_targa':
     context.user_data['state']='makepark_cognome'
-   elif state=='ghost_targa':
-    context.user_data['state']='ghost_cognome'
    else:
-    context.user_data['state']='ritiro_cognome'
+    context.user_data['state']='ghost_cognome'
    await update.message.reply_text("👤 Inserisci il COGNOME del cliente:")
-  elif state in ['ritiro_cognome','ghost_cognome','makepark_cognome']:
+  elif state in ['ghost_cognome','makepark_cognome']:
    if not validate_cognome(text):
     await update.message.reply_text("❌ Cognome non valido!\n\nUsa solo lettere, spazi e apostrofi:")
     return
    context.user_data['cognome']=text.strip()
    if state=='makepark_cognome':
     context.user_data['state']='makepark_stanza'
-   elif state=='ghost_cognome':
-    context.user_data['state']='ghost_stanza'
    else:
-    context.user_data['state']='ritiro_stanza'
+    context.user_data['state']='ghost_stanza'
    await update.message.reply_text("🏨 Inserisci il numero STANZA (0-999):")
-  elif state in ['ritiro_stanza','ghost_stanza','makepark_stanza']:
+  elif state in ['ghost_stanza','makepark_stanza']:
    try:
     stanza=int(text)
     if 0<=stanza<=999:
@@ -893,12 +991,9 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
      if state=='makepark_stanza':
       context.user_data['state']='makepark_data'
       await update.message.reply_text("📅 Inserisci la DATA DI ENTRATA (formato gg/mm/aaaa):\n\nEsempio: 01/07/2025")
-     elif state=='ghost_stanza':
-      context.user_data['state']='ghost_chiave'
-      await update.message.reply_text("🔑 Inserisci il NUMERO CHIAVE (0-999) o scrivi 'skip' per saltare:")
      else:
-      context.user_data['state']='ritiro_chiave'
-      await update.message.reply_text("🔑 Inserisci il NUMERO CHIAVE (0-999) o scrivi 'skip' per saltare:")
+      context.user_data['state']='ghost_box'
+      await update.message.reply_text("📦 Inserisci il NUMERO BOX (0-999) o scrivi 'skip' per saltare:")
     else:await update.message.reply_text("❌ Numero stanza non valido! Inserisci un numero da 0 a 999:")
    except ValueError:await update.message.reply_text("❌ Inserisci un numero valido per la stanza:")
   elif state=='makepark_data':
@@ -906,33 +1001,29 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Formato data non valido!\n\nInserisci la data nel formato gg/mm/aaaa\nEsempio: 15/07/2025")
     return
    context.user_data['data_custom']=text
-   context.user_data['state']='makepark_chiave'
-   await update.message.reply_text("🔑 Inserisci il NUMERO CHIAVE (0-999) o scrivi 'skip' per saltare:")
-  elif state in ['ritiro_chiave','ghost_chiave','makepark_chiave']:
+   context.user_data['state']='makepark_box'
+   await update.message.reply_text("📦 Inserisci il NUMERO BOX (0-999) o scrivi 'skip' per saltare:")
+  elif state in ['ghost_box','makepark_box']:
    if text.lower()=='skip':
     context.user_data['numero_chiave']=None
-    if state=='makepark_chiave':
+    if state=='makepark_box':
      context.user_data['state']='makepark_note'
-    elif state=='ghost_chiave':
-     context.user_data['state']='ghost_note'
     else:
-     context.user_data['state']='ritiro_note'
+     context.user_data['state']='ghost_note'
     await update.message.reply_text("📝 Inserisci eventuali NOTE (o scrivi 'skip' per saltare):")
    else:
     try:
-     chiave=int(text)
-     if 0<=chiave<=999:
-      context.user_data['numero_chiave']=chiave
-      if state=='makepark_chiave':
+     box=int(text)
+     if 0<=box<=999:
+      context.user_data['numero_chiave']=box
+      if state=='makepark_box':
        context.user_data['state']='makepark_note'
-      elif state=='ghost_chiave':
-       context.user_data['state']='ghost_note'
       else:
-       context.user_data['state']='ritiro_note'
+       context.user_data['state']='ghost_note'
       await update.message.reply_text("📝 Inserisci eventuali NOTE (o scrivi 'skip' per saltare):")
-     else:await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'skip':")
-    except ValueError:await update.message.reply_text("❌ Inserisci un numero valido per la chiave o 'skip':")
-  elif state in ['ritiro_note','ghost_note','makepark_note']:
+     else:await update.message.reply_text("❌ Numero BOX non valido! Inserisci un numero da 0 a 999 o 'skip':")
+    except ValueError:await update.message.reply_text("❌ Inserisci un numero valido per il BOX o 'skip':")
+  elif state in ['ghost_note','makepark_note']:
    note=text if text.lower()!='skip' else None
    targa=context.user_data['targa']
    cognome=context.user_data['cognome']
@@ -948,15 +1039,9 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
      cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,?,?,?)''',(targa,cognome,stanza,numero_chiave,note,'parcheggiata',data_sql,data_sql,1 if is_ghost else 0))
      tipo_msg="🅿️ AUTO GIÀ PARCHEGGIATA REGISTRATA!"
     else:
-     if is_ghost:
-      numero_progressivo=0
-     else:
-      numero_progressivo=get_prossimo_numero()
-     cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,numero_progressivo,is_ghost) VALUES (?,?,?,?,?,?,?)''',(targa,cognome,stanza,numero_chiave,note,numero_progressivo,1 if is_ghost else 0))
-     if is_ghost:
-      tipo_msg="👻 GHOST CAR REGISTRATA!"
-     else:
-      tipo_msg="✅ RICHIESTA CREATA!"
+     numero_progressivo=0
+     cursor.execute('''INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,numero_progressivo,is_ghost) VALUES (?,?,?,?,?,?,?)''',(targa,cognome,stanza,numero_chiave,note,numero_progressivo,1))
+     tipo_msg="👻 GHOST CAR REGISTRATA!"
     auto_id=cursor.lastrowid
     conn.commit()
     conn.close()
@@ -965,11 +1050,9 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
     if state=='makepark_note':
      recap_msg+=f"\n📅 Data entrata: {context.user_data.get('data_custom','N/A')}"
      recap_msg+=f"\n🅿️ Stato: PARCHEGGIATA"
-    elif is_ghost:
-     recap_msg+=f"\n👻 Tipo: GHOST CAR (Staff/Direttore)"
     else:
-     recap_msg+=f"\n🔢 Numero: #{numero_progressivo}"
-    if numero_chiave is not None:recap_msg+=f"\n🔑 Chiave: {numero_chiave}"
+     recap_msg+=f"\n👻 Tipo: GHOST CAR (Staff/Direttore)"
+    if numero_chiave is not None:recap_msg+=f"\n📦 BOX: {numero_chiave}"
     if note:recap_msg+=f"\n📝 Note: {note}"
     recap_msg+=f"\n\n📅 Registrata il {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
     await update.message.reply_text(recap_msg)
@@ -1019,21 +1102,21 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
       context.user_data.clear()
      else:await update.message.reply_text("❌ Numero stanza non valido! Inserisci un numero da 0 a 999:")
     except ValueError:await update.message.reply_text("❌ Inserisci un numero valido per la stanza:")
-   elif field=='chiave':
+   elif field=='box':
     if text.lower()=='rimuovi':value=None
     else:
      try:
       value=int(text)
       if not(0<=value<=999):
-       await update.message.reply_text("❌ Numero chiave non valido! Inserisci un numero da 0 a 999 o 'rimuovi':")
+       await update.message.reply_text("❌ Numero BOX non valido! Inserisci un numero da 0 a 999 o 'rimuovi':")
        return
      except ValueError:
-      await update.message.reply_text("❌ Inserisci un numero valido per la chiave o 'rimuovi':")
+      await update.message.reply_text("❌ Inserisci un numero valido per il BOX o 'rimuovi':")
       return
     if update_auto_field(auto_id,'numero_chiave',value):
      auto=get_auto_by_id(auto_id)
-     text_result="rimossa"if value is None else f"impostata a {value}"
-     await update.message.reply_text(f"✅ Chiave {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
+     text_result="rimosso"if value is None else f"impostato a {value}"
+     await update.message.reply_text(f"✅ BOX {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
     else:await update.message.reply_text("❌ Errore durante l'aggiornamento")
     context.user_data.clear()
    elif field=='note':
@@ -1041,7 +1124,7 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
     else:value=text.strip()
     if update_auto_field(auto_id,'note',value):
      auto=get_auto_by_id(auto_id)
-     text_result="rimosse"if value is None else "aggiornate"
+     text_result="rimosse"if value is None else"aggiornate"
      await update.message.reply_text(f"✅ Note {text_result}\n\n🚗 {auto[1]} - Stanza {auto[3]}")
     else:await update.message.reply_text("❌ Errore durante l'aggiornamento")
     context.user_data.clear()
@@ -1235,12 +1318,12 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:
     await query.edit_message_text("❌ Auto non trovata")
     return
-   keyboard=[[InlineKeyboardButton("🚗 Modifica Targa",callback_data=f"mod_targa_{auto_id}")],[InlineKeyboardButton("👤 Modifica Cognome",callback_data=f"mod_cognome_{auto_id}")],[InlineKeyboardButton("🏨 Modifica Stanza",callback_data=f"mod_stanza_{auto_id}")],[InlineKeyboardButton("🔑 Modifica Chiave",callback_data=f"mod_chiave_{auto_id}")],[InlineKeyboardButton("📝 Modifica Note",callback_data=f"mod_note_{auto_id}")]]
+   keyboard=[[InlineKeyboardButton("🚗 Modifica Targa",callback_data=f"mod_targa_{auto_id}")],[InlineKeyboardButton("👤 Modifica Cognome",callback_data=f"mod_cognome_{auto_id}")],[InlineKeyboardButton("🏨 Modifica Stanza",callback_data=f"mod_stanza_{auto_id}")],[InlineKeyboardButton("📦 Modifica BOX",callback_data=f"mod_box_{auto_id}")],[InlineKeyboardButton("📝 Modifica Note",callback_data=f"mod_note_{auto_id}")]]
    reply_markup=InlineKeyboardMarkup(keyboard)
-   chiave_text=f"\n🔑 Chiave: {auto[4]}"if auto[4] else"\n🔑 Chiave: Non assegnata"
+   box_text=f"\n📦 BOX: {auto[4]}"if auto[4] else"\n📦 BOX: Non assegnato"
    note_text=f"\n📝 Note: {auto[5]}"if auto[5] else"\n📝 Note: Nessuna"
    ghost_text=" 👻" if auto[14] else ""
-   await query.edit_message_text(f"✏️ MODIFICA AUTO\n\n🚗 Targa: {auto[1]}{ghost_text}\n👤 Cliente: {auto[2]}\n🏨 Stanza: {auto[3]}{chiave_text}{note_text}\n\nCosa vuoi modificare?",reply_markup=reply_markup)
+   await query.edit_message_text(f"✏️ MODIFICA AUTO\n\n🚗 Targa: {auto[1]}{ghost_text}\n👤 Cliente: {auto[2]}\n🏨 Stanza: {auto[3]}{box_text}{note_text}\n\nCosa vuoi modificare?",reply_markup=reply_markup)
   elif data.startswith('mostra_foto_'):
    auto_id=int(data.split('_')[2])
    auto=get_auto_by_id(auto_id)
@@ -1291,14 +1374,14 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     return
    context.user_data['state']=f'mod_stanza_{auto_id}'
    await query.edit_message_text(f"🏨 MODIFICA STANZA\n\n{auto[1]} - {auto[2]}\nStanza attuale: {auto[3]}\n\nInserisci nuovo numero stanza (0-999):")
-  elif data.startswith('mod_chiave_'):
+  elif data.startswith('mod_box_'):
    auto_id=int(data.split('_')[2])
    auto=get_auto_by_id(auto_id)
    if not auto:
     await query.edit_message_text("❌ Auto non trovata")
     return
-   context.user_data['state']=f'mod_chiave_{auto_id}'
-   await query.edit_message_text(f"🔑 MODIFICA CHIAVE\n\n{auto[1]} - Stanza {auto[3]}\nChiave attuale: {auto[4] or 'Non assegnata'}\n\nInserisci nuovo numero chiave (0-999) o scrivi 'rimuovi':")
+   context.user_data['state']=f'mod_box_{auto_id}'
+   await query.edit_message_text(f"📦 MODIFICA BOX\n\n{auto[1]} - Stanza {auto[3]}\nBOX attuale: {auto[4] or 'Non assegnato'}\n\nInserisci nuovo numero BOX (0-999) o scrivi 'rimuovi':")
   elif data.startswith('mod_note_'):
    auto_id=int(data.split('_')[2])
    auto=get_auto_by_id(auto_id)
@@ -1344,10 +1427,10 @@ def main():
   application.add_handler(CallbackQueryHandler(handle_callback_query))
   logging.info(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   logging.info("✅ Sistema gestione auto hotel PROFESSIONALE")
-  logging.info("🔧 v5.02: +Sistema Prenotazioni Partenze (data/ora programmata)")
+  logging.info("🔧 v5.03: +Ritiro Semplificato (cognome+stanza) +Notifiche Canale Valet +Terminologia BOX")
   print(f"🚗 {BOT_NAME} v{BOT_VERSION} avviato!")
   print("✅ Sistema gestione auto hotel PROFESSIONALE")
-  print("🔧 v5.02: +Sistema Prenotazioni Partenze (data/ora programmata)")
+  print("🔧 v5.03: +Ritiro Semplificato (cognome+stanza) +Notifiche Canale Valet +Terminologia BOX")
   application.run_polling(allowed_updates=Update.ALL_TYPES)
  except Exception as e:
   logging.error(f"Errore durante l'avvio del bot: {e}")
