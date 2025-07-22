@@ -192,7 +192,7 @@ By Zibroncloud
  await update.message.reply_text(msg)
 
 async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- msg=f"""🚗 {BOT_NAME} v{BOT_VERSION} - GUIDA COMPLETA
+ help_msg=f"""🚗 {BOT_NAME} v{BOT_VERSION} - GUIDA COMPLETA
 
 🏨 HOTEL (WORKFLOW SEMPLIFICATO):
 /ritiro → Cognome + Stanza → AUTOMATICO:
@@ -236,7 +236,7 @@ Hotel: /ritiro → Notifica → Valet: /recupero → /park → /completa → /pa
 ✅ Recuperi avviati con tempistiche  
 ✅ Richieste riconsegna
 ✅ Prenotazioni partenza"""
- await update.message.reply_text(msg)
+ await update.message.reply_text(help_msg)
 
 # ===== HOTEL COMMANDS =====
 async def ritiro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -498,9 +498,17 @@ async def handle_modifica(update,context,state,text):
    try:value=int(text);assert 0<=value<=999
    except:await update.message.reply_text("❌ Stanza 0-999!");return
   elif field in['box','note']:
-   value=None if text.lower()=='rimuovi'else(int(text)if field=='box'and text.isdigit()and 0<=int(text)<=999 else text.strip()if field=='note'else None)
-   if field=='box'and text.lower()!='rimuovi'and(not text.isdigit()or not 0<=int(text)<=999):
-    await update.message.reply_text("❌ BOX 0-999 o 'rimuovi'!");return
+   if text.lower()=='rimuovi':
+    value=None
+   elif field=='box' and text.isdigit() and 0<=int(text)<=999:
+    value=int(text)
+   elif field=='note':
+    value=text.strip()
+   else:
+    value=None
+   
+   if field=='box' and text.lower()!='rimuovi' and (not text.isdigit() or not 0<=int(text)<=999):
+    await update.message.reply_text("❌ BOX 0-999 o rimuovi!");return
   
   field_db={'box':'numero_chiave'}.get(field,field)
   if db_query(f'UPDATE auto SET {field_db}=? WHERE id=?',(value,auto_id),'none'):
@@ -903,8 +911,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     'targa':'🚗 Nuova TARGA:',
     'cognome':'👤 Nuovo COGNOME:',
     'stanza':'🏨 Nuova STANZA (0-999):',
-    'box':'📦 Nuovo BOX (0-999) o "rimuovi":',
-    'note':'📝 Nuove NOTE o "rimuovi":'
+    'box':'📦 Nuovo BOX (0-999) o rimuovi:',
+    'note':'📝 Nuove NOTE o rimuovi:'
    }
    prompt_text=prompts.get(field,'Campo non valido')
    modifica_field_msg=f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompt_text}"
@@ -915,7 +923,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   
  except Exception as e:
   logging.error(f"Errore callback {data}: {e}")
-  await query.edit_message_text("❌ Errore imprevisto. Riprova o contatta l'assistenza.")n\n🚗 {auto[1]} - {auto[2]}\n🏨 Stanza: {auto[3]}\n📦 {box_text}\n📝 {note_text}\n\nCosa modificare?",reply_markup=keyboard)
+  await query.edit_message_text("❌ Errore imprevisto. Riprova o contatta assistenza.")n\n🚗 {auto[1]} - {auto[2]}\n🏨 Stanza: {auto[3]}\n📦 {box_text}\n📝 {note_text}\n\nCosa modificare?",reply_markup=keyboard)
  
  elif data.startswith('mod_'):
   field,auto_id=data.split('_')[1],int(data.split('_')[2])
