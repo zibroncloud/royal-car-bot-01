@@ -297,6 +297,56 @@ async def handle_recupero_specifico(update,context,auto_id,tipo_op):
 async def park_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"park","🅿️ CONFERMA PARCHEGGIO","stato='ritiro'")
 
+async def riconsegna_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"riconsegna","🚪 RICONSEGNA TEMPORANEA","stato='parcheggiata'")
+
+async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"rientro","🔄 RIENTRO IN PARCHEGGIO","stato='stand-by'")
+
+async def foto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"foto","📷 CARICA FOTO","stato IN ('ritiro','parcheggiata')")
+
+async def servizi_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"servizi_auto","🔧 SERVIZI EXTRA","stato='parcheggiata'")
+
+async def modifica_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"modifica","✏️ MODIFICA AUTO","stato!='uscita'")
+
+async def partito_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"partito","🏁 USCITA DEFINITIVA","stato IN ('ritiro','parcheggiata','stand-by','rientro','riconsegna')")
+
+async def handle_modifica(update,context,state,text):
+ """Handler unificato per modifiche"""
+ try:
+  field,auto_id=state.split('_')[1],int(state.split('_')[2])
+  auto=get_auto_by_id(auto_id)
+  if not auto:await update.message.reply_text("❌ Auto non trovata");return
+  
+  if field=='targa':
+   if not validate_targa(text):await update.message.reply_text("❌ Targa non valida!");return
+   value=text.upper()
+  elif field=='cognome':
+   if not validate_cognome(text):await update.message.reply_text("❌ Cognome non valido!");return
+   value=text.strip()
+  elif field=='stanza':
+   try:value=int(text);assert 0<=value<=999
+   except:await update.message.reply_text("❌ Stanza 0-999!");return
+  elif field in['box','note']:
+   value=None if text.lower()=='rimuovi'else(int(text)if field=='box'and text.isdigit()and 0<=int(text)<=999 else text.strip()if field=='note'else None)
+   if field=='box'and text.lower()!='rimuovi'and(not text.isdigit()or not 0<=int(text)<=999):
+    await update.message.reply_text("❌ BOX 0-999 o 'rimuovi'!");return
+  
+  field_db={'box':'numero_chiave'}.get(field,field)
+  if db_query(f'UPDATE auto SET {field_db}=? WHERE id=?',(value,auto_id),'none'):
+   result_text={'box':f"BOX {'rimosso'if value is None else f'impostato a {value}'}",
+               'note':f"Note {'rimosse'if value is None else'aggiornate'}"}.get(field,f"{field.title()} aggiornato")
+   await update.message.reply_text(f"✅ {result_text}\n🚗 {auto[1]} - Stanza {auto[3]}")
+  context.user_data.clear()
+ except Exception as e:
+  logging.error(f"Errore handle_modifica: {e}")
+  await update.message.reply_text("❌ Errore durante la modifica")
+  context.user_data.clear()
+
 async def completa_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  """Completa dati auto: targa reale + BOX + foto (prima O dopo /park)"""
  try:
