@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-# CarValetBOT v5.04 CORRETTO by Zibroncloud - SNELLITO + DEEP LINK + NOTIFICHE AVANZATE
+# CarValetBOT v5.04 CORRETTO by Zibroncloud - SNELLITO + DEEP LINK + NOTIFICHE AVANZATE + FUSO ORARIO
+# NESSUNA DIPENDENZA AGGIUNTIVA RICHIESTA!
 import os,logging,sqlite3,re
-from datetime import datetime,date,timedelta
+from datetime import datetime,date,timedelta,timezone
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
+
+# Fuso orario italiano (+2 ore in estate, +1 in inverno)
+def now_italy():
+    """Restituisce datetime corrente in fuso orario italiano (UTC+1/+2)"""
+    utc_now = datetime.utcnow()
+    # Aggiungiamo 2 ore per l'estate (da marzo a ottobre circa)
+    # Se vuoi essere preciso, controlla se siamo in orario legale
+    italy_offset = 2 if utc_now.month >= 3 and utc_now.month <= 10 else 1
+    return utc_now + timedelta(hours=italy_offset)
 
 BOT_VERSION="5.04"
 BOT_NAME="CarValetBOT"
@@ -61,7 +71,7 @@ def validate_time_format(time_str):
 async def invia_notifica_canale(context:ContextTypes.DEFAULT_TYPE,auto_id,cognome,stanza,numero_progressivo):
  """Notifica iniziale: nuova richiesta"""
  try:
-  msg=f"🚗 NUOVA RICHIESTA RITIRO!\n\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}\n🔢 Numero: #{numero_progressivo}\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
+  msg=f"🚗 NUOVA RICHIESTA RITIRO!\n\n👤 Cliente: {cognome}\n🏨 Stanza: {stanza}\n🔢 Numero: #{numero_progressivo}\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}"
   keyboard=[[InlineKeyboardButton("⚙️ Gestisci Richiesta",url=f"https://t.me/{context.bot.username}?start=recupero_{auto_id}")]]
   await context.bot.send_message(chat_id=CANALE_VALET,text=msg,reply_markup=InlineKeyboardMarkup(keyboard))
   logging.info(f"Notifica inviata per auto ID {auto_id}")
@@ -73,7 +83,7 @@ async def invia_notifica_avviato(context:ContextTypes.DEFAULT_TYPE,auto,tempo_st
  try:
   ghost_text=" 👻" if auto[14] else ""
   numero_text=f"#{auto[11]}" if not auto[14] else "GHOST"
-  msg=f"🚀 RECUPERO AVVIATO!\n\n{numero_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_stimato}\n👨‍💼 Valet: @{valet_username}\n\n📅 {datetime.now().strftime('%d/%m/%Y alle %H:%M')}"
+  msg=f"🚀 RECUPERO AVVIATO!\n\n{numero_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_stimato}\n👨‍💼 Valet: @{valet_username}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}"
   await context.bot.send_message(chat_id=CANALE_VALET,text=msg)
   return True
  except Exception as e:logging.error(f"Errore notifica avviato: {e}");return False
@@ -288,11 +298,11 @@ async def servizi_stats_command(update:Update,context:ContextTypes.DEFAULT_TYPE)
  stats_oggi=db_query('SELECT tipo_servizio,COUNT(*) FROM servizi_extra WHERE date(data_servizio)=? GROUP BY tipo_servizio',(oggi,))
  servizi_oggi=dict(stats_oggi)if stats_oggi else{}
  servizi_mese=dict(stats_mese)if stats_mese else{}
- msg=f"🔧 STATISTICHE SERVIZI EXTRA\n\n📅 OGGI ({datetime.now().strftime('%d/%m/%Y')}):\n"
+ msg=f"🔧 STATISTICHE SERVIZI EXTRA\n\n📅 OGGI ({now_italy().strftime('%d/%m/%Y')}):\n"
  msg+=f"  🌙 Ritiri notturni: {servizi_oggi.get('ritiro_notturno',0)}\n"
  msg+=f"  🏠 Garage 10+ giorni: {servizi_oggi.get('garage_10plus',0)}\n"
  msg+=f"  🚿 Autolavaggi: {servizi_oggi.get('autolavaggio',0)}\n\n"
- msg+=f"📊 {datetime.now().strftime('%B %Y').upper()}:\n"
+ msg+=f"📊 {now_italy().strftime('%B %Y').upper()}:\n"
  msg+=f"  🌙 Ritiri notturni: {servizi_mese.get('ritiro_notturno',0)}\n"
  msg+=f"  🏠 Garage 10+ giorni: {servizi_mese.get('garage_10plus',0)}\n"
  msg+=f"  🚿 Autolavaggi: {servizi_mese.get('autolavaggio',0)}\n\n"
@@ -310,7 +320,7 @@ async def lista_auto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  oggi,mese=date.today().strftime('%Y-%m-%d'),date.today().strftime('%Y-%m')
  stats=db_query(f'SELECT (SELECT COUNT(*) FROM auto WHERE date(data_arrivo)="{oggi}" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE date(data_uscita)="{oggi}" AND stato="uscita" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_arrivo)="{mese}" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_uscita)="{mese}" AND stato="uscita" AND is_ghost=0)','one')
  
- msg=f"📊 STATISTICHE {datetime.now().strftime('%d/%m/%Y')}\n\n📈 OGGI: Entrate {stats[0]} | Uscite {stats[1]}\n📅 MESE: Entrate {stats[2]} | Uscite {stats[3]}\n\n"
+ msg=f"📊 STATISTICHE {now_italy().strftime('%d/%m/%Y')}\n\n📈 OGGI: Entrate {stats[0]} | Uscite {stats[1]}\n📅 MESE: Entrate {stats[2]} | Uscite {stats[3]}\n\n"
  if auto_list:
   msg+=f"🅿️ AUTO IN PARCHEGGIO ({len(auto_list)}):\n"
   for a in auto_list:msg+=f"{a[0]} | {a[1]} | {a[2]} | BOX:{a[3] or '--'}{f' 📷{a[4]}'if a[4]else''}\n"
@@ -329,10 +339,10 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   for auto in auto_data:csv_content+=",".join([f'"{str(v).replace("\"","\"\"")}"'if v and(','in str(v)or '"'in str(v))else str(v or'')for v in auto])+"\n"
   csv_content+="\n=== SERVIZI EXTRA ===\nID,AutoID,Targa,Cognome,Stanza,TipoServizio,DataServizio\n"
   for serv in servizi_data:csv_content+=",".join([str(v or'')for v in serv])+"\n"
-  filename=f"carvalet_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+  filename=f"carvalet_export_{now_italy().strftime('%Y%m%d_%H%M%S')}.csv"
   with open(filename,'w',encoding='utf-8')as f:f.write(csv_content)
   with open(filename,'rb')as f:
-   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v5.04 - {datetime.now().strftime('%d/%m/%Y %H:%M')}\n📁 {len(auto_data)} auto totali")
+   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v5.04 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
   os.remove(filename)
  except Exception as e:logging.error(f"Export error: {e}");await update.message.reply_text("❌ Errore export")
 
@@ -439,11 +449,11 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
   if state=='makepark_note':
    auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,CURRENT_DATE,CURRENT_DATE,?)',
                    (targa,cognome,stanza,box,note,'parcheggiata',1 if is_ghost else 0),'lastid')
-   await update.message.reply_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🆔 ID: {auto_id}\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}")
+   await update.message.reply_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🆔 ID: {auto_id}\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
   else:
    auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,numero_progressivo,is_ghost) VALUES (?,?,?,?,?,?,?)',
                    (targa,cognome,stanza,box,note,0,1),'lastid')
-   await update.message.reply_text(f"👻 GHOST CAR REGISTRATA!\n\n🆔 ID: {auto_id}\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}")
+   await update.message.reply_text(f"👻 GHOST CAR REGISTRATA!\n\n🆔 ID: {auto_id}\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
   context.user_data.clear()
  
  # Gestione modifiche
