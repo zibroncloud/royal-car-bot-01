@@ -50,8 +50,8 @@ def db_query(query,params=(),fetch='all'):
  except Exception as e:logging.error(f"DB Error: {e}");return None if fetch!='none' else 0
 
 def get_auto_by_id(auto_id):return db_query('SELECT * FROM auto WHERE id=?',(auto_id,),'one')
-def get_prossimo_numero():return(db_query('SELECT MAX(numero_progressivo) FROM auto WHERE date(data_arrivo)=? AND is_ghost=0',(date.today().strftime('%Y-%m-%d'),),'one')[0] or 0)+1
-def genera_targa_hotel():count=db_query('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=? AND targa LIKE "HOTEL%"',(date.today().strftime('%Y-%m-%d'),),'one')[0];return f"HOTEL{count+1:03d}"
+def get_prossimo_numero():return(db_query('SELECT MAX(numero_progressivo) FROM auto WHERE date(data_arrivo)=? AND is_ghost=0',(now_italy().date().strftime('%Y-%m-%d'),),'one')[0] or 0)+1
+def genera_targa_hotel():count=db_query('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=? AND targa LIKE "HOTEL%"',(now_italy().date().strftime('%Y-%m-%d'),),'one')[0];return f"HOTEL{count+1:03d}"
 
 # ===== VALIDATION FUNCTIONS =====
 def validate_targa(targa):
@@ -203,7 +203,7 @@ async def prenota_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 async def mostra_prenotazioni_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  prenotazioni=db_query('''SELECT p.id,p.auto_id,a.targa,a.cognome,a.stanza,a.stato,a.is_ghost,p.data_partenza,p.ora_partenza,p.completata FROM prenotazioni p LEFT JOIN auto a ON p.auto_id=a.id WHERE p.completata=0 ORDER BY p.data_partenza,p.ora_partenza''')
  if not prenotazioni:await update.message.reply_text("📅 Nessuna prenotazione");return
- oggi,domani=date.today(),date.today()+timedelta(days=1)
+ oggi,domani=now_italy().date(),now_italy().date()+timedelta(days=1)
  msg="📅 PRENOTAZIONI PARTENZA\n\n"
  for gruppo,etichetta in [(oggi,"🚨 OGGI"),(domani,"📅 DOMANI")]:
   gruppo_pren=[p for p in prenotazioni if datetime.strptime(p[7],'%Y-%m-%d').date()==gruppo]
@@ -229,7 +229,7 @@ async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"rientro","🔄 RIENTRO IN PARCHEGGIO","stato='stand-by'")
 
 async def vedi_recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- oggi=date.today().strftime('%Y-%m-%d')
+ oggi=now_italy().date().strftime('%Y-%m-%d')
  auto_list=db_query('SELECT id,targa,cognome,stanza,stato,numero_progressivo,tempo_stimato,ora_accettazione,is_ghost FROM auto WHERE date(data_arrivo)=? AND stato IN ("richiesta","ritiro","parcheggiata","riconsegna","stand-by","rientro") ORDER BY numero_progressivo',(oggi,))
  if not auto_list:await update.message.reply_text("📋 Nessun recupero oggi");return
  msg="🔍 STATO RECUPERI DI OGGI:\n\n"
@@ -254,17 +254,21 @@ async def makepark_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 # ===== VALET COMMANDS =====
 async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- auto_list=db_query('SELECT id,targa,cognome,stanza,numero_chiave,numero_progressivo,stato,is_ghost FROM auto WHERE stato IN ("richiesta","riconsegna","rientro") ORDER BY is_ghost,numero_progressivo')
- if not auto_list:await update.message.reply_text("📋 Nessun recupero da gestire");return
- keyboard=[]
- for auto in auto_list:
-  box_text=f" - BOX: {auto[4]}" if auto[4] else ""
-  ghost_text=" 👻" if auto[7] else ""
-  tipo={'richiesta':'📋 RITIRO','riconsegna':'🚪 RICONSEGNA','rientro':'🔄 RIENTRO'}[auto[6]]
-  num_text=f"#{auto[5]}" if not auto[7] else "GHOST"
-  text=f"{tipo} {num_text} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}"
-  keyboard.append([InlineKeyboardButton(text,callback_data=f"recupero_{auto[0]}_{auto[6]}")])
- await update.message.reply_text("⚙️ GESTIONE RECUPERI",reply_markup=InlineKeyboardMarkup(keyboard))
+ try:
+  auto_list=db_query('SELECT id,targa,cognome,stanza,numero_chiave,numero_progressivo,stato,is_ghost FROM auto WHERE stato IN ("richiesta","riconsegna","rientro") ORDER BY is_ghost,numero_progressivo')
+  if not auto_list:await update.message.reply_text("📋 Nessun recupero da gestire");return
+  keyboard=[]
+  for auto in auto_list:
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
+   ghost_text=" 👻" if auto[7] else ""
+   tipo={'richiesta':'📋 RITIRO','riconsegna':'🚪 RICONSEGNA','rientro':'🔄 RIENTRO'}[auto[6]]
+   num_text=f"#{auto[5]}" if not auto[7] else "GHOST"
+   text=f"{tipo} {num_text} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}"
+   keyboard.append([InlineKeyboardButton(text,callback_data=f"recupero_{auto[0]}_{auto[6]}")])
+  await update.message.reply_text("⚙️ GESTIONE RECUPERI",reply_markup=InlineKeyboardMarkup(keyboard))
+ except Exception as e:
+  logging.error(f"Errore recupero: {e}")
+  await update.message.reply_text("❌ Errore caricamento recuperi")
 
 async def handle_recupero_specifico(update,context,auto_id,tipo_op):
  """Handler per recupero specifico da deep link"""
@@ -298,21 +302,25 @@ async def foto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"foto","📷 CARICA FOTO","stato IN ('ritiro','parcheggiata')")
 
 async def vedi_foto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- auto_list=db_query('SELECT DISTINCT a.id,a.targa,a.cognome,a.stanza,a.stato,a.foto_count,a.is_ghost FROM auto a INNER JOIN foto f ON a.id=f.auto_id WHERE a.foto_count>0 ORDER BY a.stanza')
- if not auto_list:await update.message.reply_text("📷 Nessuna foto disponibile");return
- keyboard=[]
- emoji_map={'parcheggiata':"🅿️",'riconsegna':"🚪",'stand-by':"⏸️",'rientro':"🔄",'ritiro':"⚙️",'richiesta':"📋",'uscita':"🏁"}
- for auto in auto_list:
-  ghost_text=" 👻" if auto[6] else ""
-  emoji=emoji_map.get(auto[4],"❓")
-  keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text} - 📷 {auto[5]} foto",callback_data=f"mostra_foto_{auto[0]}")])
- await update.message.reply_text("📷 VISUALIZZA FOTO AUTO",reply_markup=InlineKeyboardMarkup(keyboard))
+ try:
+  auto_list=db_query('SELECT DISTINCT a.id,a.targa,a.cognome,a.stanza,a.stato,a.foto_count,a.is_ghost FROM auto a INNER JOIN foto f ON a.id=f.auto_id WHERE a.foto_count>0 ORDER BY a.stanza')
+  if not auto_list:await update.message.reply_text("📷 Nessuna foto disponibile");return
+  keyboard=[]
+  emoji_map={'parcheggiata':"🅿️",'riconsegna':"🚪",'stand-by':"⏸️",'rientro':"🔄",'ritiro':"⚙️",'richiesta':"📋",'uscita':"🏁"}
+  for auto in auto_list:
+   ghost_text=" 👻" if auto[6] else ""
+   emoji=emoji_map.get(auto[4],"❓")
+   keyboard.append([InlineKeyboardButton(f"{emoji} Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text} - 📷 {auto[5]} foto",callback_data=f"mostra_foto_{auto[0]}")])
+  await update.message.reply_text("📷 VISUALIZZA FOTO AUTO",reply_markup=InlineKeyboardMarkup(keyboard))
+ except Exception as e:
+  logging.error(f"Errore vedi_foto: {e}")
+  await update.message.reply_text("❌ Errore caricamento foto")
 
 async def servizi_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"servizi_auto","🔧 SERVIZI EXTRA","stato='parcheggiata'")
 
 async def servizi_stats_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- oggi,mese=date.today().strftime('%Y-%m-%d'),date.today().strftime('%Y-%m')
+ oggi,mese=now_italy().date().strftime('%Y-%m-%d'),now_italy().date().strftime('%Y-%m')
  stats_mese=db_query('SELECT tipo_servizio,COUNT(*) FROM servizi_extra WHERE strftime("%Y-%m",data_servizio)=? GROUP BY tipo_servizio',(mese,))
  stats_oggi=db_query('SELECT tipo_servizio,COUNT(*) FROM servizi_extra WHERE date(data_servizio)=? GROUP BY tipo_servizio',(oggi,))
  servizi_oggi=dict(stats_oggi)if stats_oggi else{}
@@ -334,48 +342,80 @@ async def modifica_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"modifica","✏️ MODIFICA AUTO","stato!='uscita'")
 
 async def lista_auto_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- auto_list=db_query('SELECT stanza,cognome,targa,numero_chiave,foto_count FROM auto WHERE stato="parcheggiata" AND is_ghost=0 ORDER BY stanza')
- ghost_list=db_query('SELECT stanza,cognome,targa,numero_chiave,foto_count FROM auto WHERE stato="parcheggiata" AND is_ghost=1 ORDER BY stanza')
- oggi,mese=date.today().strftime('%Y-%m-%d'),date.today().strftime('%Y-%m')
- stats=db_query(f'SELECT (SELECT COUNT(*) FROM auto WHERE date(data_arrivo)="{oggi}" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE date(data_uscita)="{oggi}" AND stato="uscita" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_arrivo)="{mese}" AND is_ghost=0),(SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_uscita)="{mese}" AND stato="uscita" AND is_ghost=0)','one')
- 
- msg=f"📊 STATISTICHE {now_italy().strftime('%d/%m/%Y')}\n\n📈 OGGI: Entrate {stats[0]} | Uscite {stats[1]}\n📅 MESE: Entrate {stats[2]} | Uscite {stats[3]}\n\n"
- if auto_list:
-  msg+=f"🅿️ AUTO IN PARCHEGGIO ({len(auto_list)}):\n"
-  for a in auto_list:msg+=f"{a[0]} | {a[1]} | {a[2]} | BOX:{a[3] or '--'}{f' 📷{a[4]}'if a[4]else''}\n"
- if ghost_list:
-  msg+=f"\n👻 GHOST CARS ({len(ghost_list)}):\n"
-  for a in ghost_list:msg+=f"{a[0]} | {a[1]} | {a[2]} | BOX:{a[3] or '--'}{f' 📷{a[4]}'if a[4]else''} 👻\n"
- if not auto_list and not ghost_list:msg+="🅿️ Nessuna auto in parcheggio"
- await update.message.reply_text(msg)
+ try:
+  auto_list=db_query('SELECT stanza,cognome,targa,numero_chiave,foto_count FROM auto WHERE stato="parcheggiata" AND is_ghost=0 ORDER BY stanza')
+  ghost_list=db_query('SELECT stanza,cognome,targa,numero_chiave,foto_count FROM auto WHERE stato="parcheggiata" AND is_ghost=1 ORDER BY stanza')
+  oggi,mese=now_italy().date().strftime('%Y-%m-%d'),now_italy().date().strftime('%Y-%m')
+  
+  # Query semplificate per evitare errori
+  entrate_oggi=db_query('SELECT COUNT(*) FROM auto WHERE date(data_arrivo)=? AND is_ghost=0',(oggi,),'one')[0]
+  uscite_oggi=db_query('SELECT COUNT(*) FROM auto WHERE date(data_uscita)=? AND stato="uscita" AND is_ghost=0',(oggi,),'one')[0]
+  entrate_mese=db_query('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_arrivo)=? AND is_ghost=0',(mese,),'one')[0]
+  uscite_mese=db_query('SELECT COUNT(*) FROM auto WHERE strftime("%Y-%m",data_uscita)=? AND stato="uscita" AND is_ghost=0',(mese,),'one')[0]
+  
+  msg=f"📊 STATISTICHE {now_italy().strftime('%d/%m/%Y')}\n\n📈 OGGI: Entrate {entrate_oggi} | Uscite {uscite_oggi}\n📅 MESE: Entrate {entrate_mese} | Uscite {uscite_mese}\n\n"
+  
+  if auto_list:
+   msg+=f"🅿️ AUTO IN PARCHEGGIO ({len(auto_list)}):\n"
+   for a in auto_list:msg+=f"{a[0]} | {a[1]} | {a[2]} | BOX:{a[3] or '--'}{f' 📷{a[4]}'if a[4]else''}\n"
+  if ghost_list:
+   msg+=f"\n👻 GHOST CARS ({len(ghost_list)}):\n"
+   for a in ghost_list:msg+=f"{a[0]} | {a[1]} | {a[2]} | BOX:{a[3] or '--'}{f' 📷{a[4]}'if a[4]else''} 👻\n"
+  if not auto_list and not ghost_list:msg+="🅿️ Nessuna auto in parcheggio"
+  
+  await update.message.reply_text(msg)
+ except Exception as e:
+  logging.error(f"Errore lista_auto: {e}")
+  await update.message.reply_text("❌ Errore caricamento lista auto")
 
 async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- await update.message.reply_text("📊 EXPORT DATABASE\n\n⏳ Generazione CSV...")
  try:
+  await update.message.reply_text("📊 EXPORT DATABASE\n\n⏳ Generazione CSV...")
   auto_data=db_query('SELECT * FROM auto ORDER BY is_ghost,data_arrivo DESC')
   servizi_data=db_query('SELECT s.*,a.targa,a.cognome,a.stanza FROM servizi_extra s LEFT JOIN auto a ON s.auto_id=a.id ORDER BY s.data_servizio DESC')
+  
+  if not auto_data:auto_data=[]
+  if not servizi_data:servizi_data=[]
+  
   csv_content="ID,Targa,Cognome,Stanza,BOX,Note,Stato,DataArrivo,DataPark,DataUscita,NumProgressivo,TempoStimato,OraAccettazione,FotoCount,IsGhost\n"
-  for auto in auto_data:csv_content+=",".join([f'"{str(v).replace("\"","\"\"")}"'if v and(','in str(v)or '"'in str(v))else str(v or'')for v in auto])+"\n"
+  for auto in auto_data:
+   values=[]
+   for v in auto:
+    if v is None:values.append("")
+    else:
+     str_v=str(v).replace('"','""')
+     values.append(f'"{str_v}"'if(','in str_v or'"'in str_v)else str_v)
+   csv_content+=",".join(values)+"\n"
+  
   csv_content+="\n=== SERVIZI EXTRA ===\nID,AutoID,Targa,Cognome,Stanza,TipoServizio,DataServizio\n"
-  for serv in servizi_data:csv_content+=",".join([str(v or'')for v in serv])+"\n"
+  for serv in servizi_data:
+   values=[str(v or'')for v in serv]
+   csv_content+=",".join(values)+"\n"
+  
   filename=f"carvalet_export_{now_italy().strftime('%Y%m%d_%H%M%S')}.csv"
   with open(filename,'w',encoding='utf-8')as f:f.write(csv_content)
   with open(filename,'rb')as f:
    await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v5.04 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
   os.remove(filename)
- except Exception as e:logging.error(f"Export error: {e}");await update.message.reply_text("❌ Errore export")
+ except Exception as e:
+  logging.error(f"Export error: {e}")
+  await update.message.reply_text("❌ Errore durante l'export del database")
 
 # ===== UTILITY FUNCTIONS =====
 async def generic_auto_selection(update,action,title,where_clause):
  """Helper generico per selezione auto"""
- auto_list=db_query(f'SELECT id,targa,cognome,stanza,numero_chiave,is_ghost FROM auto WHERE {where_clause} ORDER BY is_ghost,stanza')
- if not auto_list:await update.message.reply_text("📋 Nessuna auto disponibile");return
- keyboard=[]
- for auto in auto_list:
-  box_text=f" - BOX: {auto[4]}" if auto[4] else ""
-  ghost_text=" 👻" if auto[5] else ""
-  keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"{action}_{auto[0]}")])
- await update.message.reply_text(f"{title}\n\nSeleziona auto:",reply_markup=InlineKeyboardMarkup(keyboard))
+ try:
+  auto_list=db_query(f'SELECT id,targa,cognome,stanza,numero_chiave,is_ghost FROM auto WHERE {where_clause} ORDER BY is_ghost,stanza')
+  if not auto_list:await update.message.reply_text("📋 Nessuna auto disponibile");return
+  keyboard=[]
+  for auto in auto_list:
+   box_text=f" - BOX: {auto[4]}" if auto[4] else ""
+   ghost_text=" 👻" if auto[5] else ""
+   keyboard.append([InlineKeyboardButton(f"Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}",callback_data=f"{action}_{auto[0]}")])
+  await update.message.reply_text(f"{title}\n\nSeleziona auto:",reply_markup=InlineKeyboardMarkup(keyboard))
+ except Exception as e:
+  logging.error(f"Errore {action}: {e}")
+  await update.message.reply_text(f"❌ Errore caricamento {action}")
 
 async def annulla_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  if context.user_data.get('state'):
@@ -386,10 +426,15 @@ async def annulla_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 # ===== MESSAGE HANDLER =====
 async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
- state=context.user_data.get('state')
- text=update.message.text.strip()
- 
- if state=='ritiro_cognome':
+ try:
+  state=context.user_data.get('state')
+  text=update.message.text.strip()
+  
+  # Comandi di escape
+  if text.lower() in ['/annulla','/help','/start']:
+   if text.lower()=='/annulla':await annulla_command(update,context);return
+   elif text.lower()=='/help':await help_command(update,context);return
+   elif text.lower()=='/start':await start(update,context);return
   if not validate_cognome(text):await update.message.reply_text("❌ Cognome non valido!");return
   context.user_data['cognome']=text.strip()
   context.user_data['state']='ritiro_stanza'
@@ -432,8 +477,9 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
   if text.lower() in ['fine','skip']:
    auto_id=int(state.split('_')[2])
    auto=get_auto_by_id(auto_id)
-   foto_count=auto[9] if auto[9] else 0
-   await update.message.reply_text(f"✅ AUTO COMPLETATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📦 BOX: {auto[4] or 'Non assegnato'}\n📷 Foto: {foto_count} caricate\n\n🎯 Dati completati con successo!")
+   if auto:
+    foto_count=auto[10] if auto[10] else 0  # foto_count è indice 10 nel SELECT * FROM auto
+    await update.message.reply_text(f"✅ AUTO COMPLETATA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 Cliente: {auto[2]}\n📦 BOX: {auto[4] or 'Non assegnato'}\n📷 Foto: {foto_count} caricate\n\n🎯 Dati completati con successo!")
    context.user_data.clear()
   else:
    await update.message.reply_text("📷 Invia foto dell'auto o scrivi 'fine'/'skip' per terminare")
@@ -626,15 +672,15 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   if action=='park':
    db_query('UPDATE auto SET stato=?,data_park=CURRENT_DATE WHERE id=?',('parcheggiata',auto_id),'none')
    num_text=f"#{auto[11]}" if not auto[14] else "GHOST"
-   await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n{num_text} | {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}")
+   await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n{num_text} | {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
   
   elif action=='riconsegna':
    db_query('UPDATE auto SET stato=? WHERE id=?',('riconsegna',auto_id),'none')
-   await query.edit_message_text(f"🚪 RICONSEGNA RICHIESTA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}")
+   await query.edit_message_text(f"🚪 RICONSEGNA RICHIESTA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
   
   elif action=='rientro':
    db_query('UPDATE auto SET stato=? WHERE id=?',('rientro',auto_id),'none')
-   await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}")
+   await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
  
  # Partenze
  elif data.startswith('partito_'):
@@ -648,7 +694,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   auto=get_auto_by_id(auto_id)
   db_query('UPDATE auto SET stato=?,data_uscita=CURRENT_DATE WHERE id=?',('uscita',auto_id),'none')
   db_query('UPDATE prenotazioni SET completata=1 WHERE auto_id=? AND completata=0',(auto_id,),'none')
-  await query.edit_message_text(f"🏁 AUTO PARTITA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n✅ Eliminata dal sistema")
+  await query.edit_message_text(f"🏁 AUTO PARTITA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n✅ Eliminata dal sistema\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
  
  elif data=='annulla_partito':
   await query.edit_message_text("❌ Operazione annullata")
@@ -690,7 +736,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   if db_query('INSERT INTO servizi_extra (auto_id,tipo_servizio) VALUES (?,?)',(auto_id,tipo_servizio),'none'):
    servizio_names={'ritiro_notturno':'🌙 Ritiro Notturno','garage_10plus':'🏠 Garage 10+ giorni','autolavaggio':'🚿 Autolavaggio'}
    servizio_nome=servizio_names.get(tipo_servizio,'🔧 Servizio Extra')
-   await query.edit_message_text(f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}")
+   await query.edit_message_text(f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
  
  # Completa dati auto
  elif data.startswith('completa_'):
