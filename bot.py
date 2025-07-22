@@ -716,7 +716,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     
     ghost_text=" 👻" if auto[14] else ""
     num_text=f"#{auto[11]}" if not auto[14] else "GHOST"
-    await query.edit_message_text(f"✅ {desc}!\n\n{num_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_display}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    tempo_msg=f"✅ {desc}!\n\n{num_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_display}\n\n📅 {data_ora}"
+    await query.edit_message_text(tempo_msg)
    else:
     await query.edit_message_text("❌ Errore durante l'operazione")
 
@@ -729,7 +731,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    
    if db_query('UPDATE auto SET stato=?,data_park=CURRENT_DATE WHERE id=?',('parcheggiata',auto_id),'none'):
     num_text=f"#{auto[11]}" if not auto[14] else "GHOST"
-    await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA!\n\n{num_text} | {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    park_msg=f"🅿️ AUTO PARCHEGGIATA!\n\n{num_text} | {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {data_ora}"
+    await query.edit_message_text(park_msg)
    else:
     await query.edit_message_text("❌ Errore durante il parcheggio")
 
@@ -740,7 +744,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    auto=get_auto_by_id(auto_id)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    context.user_data['state']=f'completa_targa_{auto_id}'
-   await query.edit_message_text(f"🔧 COMPLETA AUTO - Passo 1/3\n\n🚗 Targa attuale: {auto[1]}\n👤 Cliente: {auto[2]} - Stanza {auto[3]}\n\n🚗 Inserisci la TARGA REALE dell'auto:")
+   completa_msg=f"🔧 COMPLETA AUTO - Passo 1/3\n\n🚗 Targa attuale: {auto[1]}\n👤 Cliente: {auto[2]} - Stanza {auto[3]}\n\n🚗 Inserisci la TARGA REALE dell'auto:"
+   await query.edit_message_text(completa_msg)
 
   elif data.startswith('partito_'):
    try:
@@ -749,7 +754,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    auto=get_auto_by_id(auto_id)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    keyboard=InlineKeyboardMarkup([[InlineKeyboardButton("✅ CONFERMA",callback_data=f"conferma_partito_{auto_id}")],[InlineKeyboardButton("❌ ANNULLA",callback_data="annulla_op")]])
-   await query.edit_message_text(f"🏁 CONFERMA USCITA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}",reply_markup=keyboard)
+   partito_conferma_msg=f"🏁 CONFERMA USCITA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}"
+   await query.edit_message_text(partito_conferma_msg,reply_markup=keyboard)
   
   elif data.startswith('conferma_partito_'):
    try:
@@ -759,7 +765,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    
    if db_query('UPDATE auto SET stato=?,data_uscita=CURRENT_DATE WHERE id=?',('uscita',auto_id),'none'):
-    await query.edit_message_text(f"🏁 AUTO PARTITA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    partito_msg=f"🏁 AUTO PARTITA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {data_ora}"
+    await query.edit_message_text(partito_msg)
    else:
     await query.edit_message_text("❌ Errore durante l'uscita")
 
@@ -771,7 +779,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    context.user_data['state']='upload_foto'
    context.user_data['foto_auto_id']=auto_id
-   await query.edit_message_text(f"📷 CARICA FOTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nInvia foto o scrivi 'fine'")
+   foto_msg=f"📷 CARICA FOTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nInvia foto o scrivi 'fine'"
+   await query.edit_message_text(foto_msg)
   
   elif data.startswith('mostra_foto_'):
    try:
@@ -780,7 +789,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    auto=get_auto_by_id(auto_id)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    foto_list=db_query('SELECT file_id,data_upload FROM foto WHERE auto_id=? ORDER BY data_upload',(auto_id,))
-   await query.edit_message_text(f"📷 FOTO AUTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n📷 Totale: {len(foto_list) if foto_list else 0} foto")
+   foto_count=len(foto_list) if foto_list else 0
+   mostra_foto_msg=f"📷 FOTO AUTO\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n📷 Totale: {foto_count} foto"
+   await query.edit_message_text(mostra_foto_msg)
    if foto_list:
     for i,(file_id,data_upload) in enumerate(foto_list[:5]):
      try:await update.effective_chat.send_photo(photo=file_id)
@@ -797,7 +808,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
     [InlineKeyboardButton("🏠 Garage 10+ giorni",callback_data=f"servizio_{auto_id}_garage_10plus")],
     [InlineKeyboardButton("🚿 Autolavaggio",callback_data=f"servizio_{auto_id}_autolavaggio")]
    ])
-   await query.edit_message_text(f"🔧 SERVIZI EXTRA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nSeleziona servizio:",reply_markup=keyboard)
+   servizio_text=f"🔧 SERVIZI EXTRA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nSeleziona servizio:"
+   await query.edit_message_text(servizio_text,reply_markup=keyboard)
   
   elif data.startswith('servizio_'):
    parts=data.split('_')
@@ -809,9 +821,15 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    
    if db_query('INSERT INTO servizi_extra (auto_id,tipo_servizio) VALUES (?,?)',(auto_id,tipo_servizio),'none'):
-    servizio_names={'ritiro_notturno':'🌙 Ritiro Notturno','garage_10plus':'🏠 Garage 10+ giorni','autolavaggio':'🚿 Autolavaggio'}
+    servizio_names={
+     'ritiro_notturno':'🌙 Ritiro Notturno',
+     'garage_10plus':'🏠 Garage 10+ giorni',
+     'autolavaggio':'🚿 Autolavaggio'
+    }
     servizio_nome=servizio_names.get(tipo_servizio,'🔧 Servizio Extra')
-    await query.edit_message_text(f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    servizio_msg=f"✅ SERVIZIO REGISTRATO!\n\n{servizio_nome}\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {data_ora}"
+    await query.edit_message_text(servizio_msg)
    else:
     await query.edit_message_text("❌ Errore registrazione servizio")
   
@@ -822,7 +840,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    auto=get_auto_by_id(auto_id)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    context.user_data.update({'auto_id':auto_id,'state':'prenota_data'})
-   await query.edit_message_text(f"📅 PRENOTA PARTENZA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nData partenza (gg/mm/aaaa):")
+   prenota_msg=f"📅 PRENOTA PARTENZA\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\nData partenza (gg/mm/aaaa):"
+   await query.edit_message_text(prenota_msg)
 
   elif data.startswith('riconsegna_'):
    try:
@@ -833,7 +852,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    
    if db_query('UPDATE auto SET stato=? WHERE id=?',('riconsegna',auto_id),'none'):
     await invia_notifica_riconsegna(context,auto)
-    await query.edit_message_text(f"🚪 RICONSEGNA RICHIESTA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📱 Notifica inviata ai Valet!")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    riconsegna_msg=f"🚪 RICONSEGNA RICHIESTA!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {data_ora}\n📱 Notifica inviata ai Valet!"
+    await query.edit_message_text(riconsegna_msg)
    else:
     await query.edit_message_text("❌ Errore durante la riconsegna")
   
@@ -845,7 +866,9 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    
    if db_query('UPDATE auto SET stato=? WHERE id=?',('rientro',auto_id),'none'):
-    await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+    data_ora=now_italy().strftime('%d/%m/%Y alle %H:%M')
+    rientro_msg=f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {data_ora}"
+    await query.edit_message_text(rientro_msg)
    else:
     await query.edit_message_text("❌ Errore durante il rientro")
 
@@ -864,7 +887,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    ])
    box_text=f"BOX: {auto[4]}" if auto[4] else "BOX: Non assegnato"
    note_text=f"Note: {auto[5]}" if auto[5] else "Note: Nessuna"
-   await query.edit_message_text(f"✏️ MODIFICA AUTO\n\n🚗 {auto[1]} - {auto[2]}\n🏨 Stanza: {auto[3]}\n📦 {box_text}\n📝 {note_text}\n\nCosa modificare?",reply_markup=keyboard)
+   modifica_msg=f"✏️ MODIFICA AUTO\n\n🚗 {auto[1]} - {auto[2]}\n🏨 Stanza: {auto[3]}\n📦 {box_text}\n📝 {note_text}\n\nCosa modificare?"
+   await query.edit_message_text(modifica_msg,reply_markup=keyboard)
   
   elif data.startswith('mod_'):
    parts=data.split('_')
@@ -875,8 +899,16 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
    auto=get_auto_by_id(auto_id)
    if not auto:await query.edit_message_text("❌ Auto non trovata!");return
    context.user_data['state']=f'mod_{field}_{auto_id}'
-   prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):','box':'📦 Nuovo BOX (0-999) o "rimuovi":','note':'📝 Nuove NOTE o "rimuovi":'}
-   await query.edit_message_text(f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompts[field]}")
+   prompts={
+    'targa':'🚗 Nuova TARGA:',
+    'cognome':'👤 Nuovo COGNOME:',
+    'stanza':'🏨 Nuova STANZA (0-999):',
+    'box':'📦 Nuovo BOX (0-999) o "rimuovi":',
+    'note':'📝 Nuove NOTE o "rimuovi":'
+   }
+   prompt_text=prompts.get(field,'Campo non valido')
+   modifica_field_msg=f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompt_text}"
+   await query.edit_message_text(modifica_field_msg)
 
   elif data=='annulla_op':
    await query.edit_message_text("❌ Operazione annullata")
