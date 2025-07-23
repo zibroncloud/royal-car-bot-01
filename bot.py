@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.03"
+BOT_VERSION="6.04"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -202,7 +202,7 @@ By Zibroncloud
 /modifica - Modifica dati auto
 /lista_auto - Statistiche parcheggio
 /export - Export database
-/vedi_recupero - Stato recuperi
+/situazione - Situazione recuperi
 
 ❓ /help /annulla
 
@@ -245,7 +245,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /modifica → Modifica tutti i dati auto
 /lista_auto → Statistiche giornaliere
 /export → Export database CSV
-/vedi_recupero → Monitoraggio recuperi
+/situazione → Situazione recuperi
 
 📱 WORKFLOW TIPO:
 Hotel: /ritiro → Notifica → Valet: /recupero → /park → /completa → /partito
@@ -438,11 +438,11 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   logging.error(f"Export error: {e}")
   await update.message.reply_text("❌ Errore durante l'export del database")
 
-async def vedi_recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+async def situazione_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  oggi=now_italy().date().strftime('%Y-%m-%d')
  auto_list=db_query('SELECT id,targa,cognome,stanza,stato,numero_progressivo,tempo_stimato,ora_accettazione,is_ghost FROM auto WHERE date(data_arrivo)=? AND stato IN ("richiesta","ritiro","parcheggiata","riconsegna","stand-by","rientro") ORDER BY numero_progressivo',(oggi,))
- if not auto_list:await update.message.reply_text("📋 Nessun recupero oggi");return
- msg="🔍 STATO RECUPERI DI OGGI:\n\n"
+ if not auto_list:await update.message.reply_text("📋 Situazione pulita oggi");return
+ msg="🔍 SITUAZIONE RECUPERI DI OGGI:\n\n"
  for auto in auto_list:
   ghost_text=" 👻" if auto[8] else ""
   emoji_status={'richiesta':"📋",'ritiro':"⚙️",'parcheggiata':"🅿️",'riconsegna':"🚪",'stand-by':"⏸️",'rientro':"🔄"}
@@ -827,7 +827,7 @@ def main():
  commands=[
   ("start",start),("help",help_command),("annulla",annulla_command),
   ("ritiro",ritiro_command),("prenota",prenota_command),("mostra_prenotazioni",mostra_prenotazioni_command),
-  ("riconsegna",riconsegna_command),("rientro",rientro_command),("vedi_recupero",vedi_recupero_command),
+  ("riconsegna",riconsegna_command),("rientro",rientro_command),("situazione",situazione_command),
   ("ghostcar",ghostcar_command),("makepark",makepark_command),
   ("recupero",recupero_command),("park",park_command),("completa",completa_command),("partito",partito_command),
   ("foto",foto_command),("vedi_foto",vedi_foto_command),("servizi",servizi_command),("servizi_stats",servizi_stats_command),
