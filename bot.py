@@ -108,11 +108,17 @@ async def invia_notifica_canale(context:ContextTypes.DEFAULT_TYPE,auto_id,cognom
   return True
  except Exception as e:logging.error(f"Errore notifica: {e}");return False
 
-async def invia_notifica_avviato(context:ContextTypes.DEFAULT_TYPE,auto,tempo_stimato,valet_username):
+async def invia_notifica_avviato(context:ContextTypes.DEFAULT_TYPE,auto,tempo_stimato,valet_username,tipo_operazione):
  try:
   ghost_text=" 👻" if auto[14] else ""
   numero_text=f"#{auto[11]}" if not auto[14] else "GHOST"
-  msg=f"🚀 RECUPERO AVVIATO!\n\n{numero_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_stimato}\n👨‍💼 Valet: @{valet_username}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}"
+  
+  if tipo_operazione == 'rientro':
+   titolo = "🔄 RIENTRO AVVIATO!"
+  else:
+   titolo = "🚀 RECUPERO AVVIATO!"
+  
+  msg=f"{titolo}\n\n{numero_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n⏰ {tempo_stimato}\n👨‍💼 Valet: @{valet_username}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}"
   await context.bot.send_message(chat_id=CANALE_VALET,text=msg)
   return True
  except Exception as e:logging.error(f"Errore notifica avviato: {e}");return False
@@ -295,7 +301,7 @@ async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   num_text=f"#{auto[5]}" if not auto[7] else "GHOST"
   text=f"{tipo} {num_text} - Stanza {auto[3]} - {auto[1]} ({auto[2]}){ghost_text}{box_text}"
   keyboard.append([InlineKeyboardButton(text,callback_data=f"recupero_{auto[0]}_{auto[6]}")])
- await update.message.reply_text("⚙️ GESTIONE RECUPERI",reply_markup=InlineKeyboardMarkup(keyboard))
+ await update.message.reply_text("⚙️ GESTIONE OPERAZIONI",reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_recupero_specifico(update,context,auto_id,tipo_op):
  auto=get_auto_by_id(auto_id)
@@ -691,7 +697,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   db_query('UPDATE auto SET stato=?,tempo_stimato=?,ora_accettazione=CURRENT_TIMESTAMP WHERE id=?',(nuovo_stato,tempo_display,auto_id),'none')
   
   valet_username=update.effective_user.username or"Valet"
-  await invia_notifica_avviato(context,auto,tempo_display,valet_username)
+  await invia_notifica_avviato(context,auto,tempo_display,valet_username,tipo)
   
   ghost_text=" 👻" if auto[14] else ""
   num_text=f"#{auto[11]}" if not auto[14] else "GHOST"
