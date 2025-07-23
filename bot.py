@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.02"
+BOT_VERSION="6.03"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -135,7 +135,15 @@ async def invia_notifica_riconsegna(context:ContextTypes.DEFAULT_TYPE,auto):
   return True
  except Exception as e:logging.error(f"Errore notifica riconsegna: {e}");return False
 
-async def invia_notifica_prenotazione(context:ContextTypes.DEFAULT_TYPE,auto,data,ora):
+async def invia_notifica_rientro(context:ContextTypes.DEFAULT_TYPE,auto):
+ try:
+  ghost_text=" 👻" if auto[14] else ""
+  numero_text=f"#{auto[11]}" if not auto[14] else "GHOST"
+  msg=f"🔄 RICHIESTA RIENTRO!\n\n{numero_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}"
+  keyboard=[[InlineKeyboardButton("⚙️ Gestisci Rientro",url=f"https://t.me/{context.bot.username}?start=recupero_{auto[0]}_rientro")]]
+  await context.bot.send_message(chat_id=CANALE_VALET,text=msg,reply_markup=InlineKeyboardMarkup(keyboard))
+  return True
+ except Exception as e:logging.error(f"Errore notifica rientro: {e}");return False
  try:
   ghost_text=" 👻" if auto[14] else ""
   numero_text=f"#{auto[11]}" if not auto[14] else "GHOST"
@@ -178,12 +186,12 @@ By Zibroncloud
 🏨 HOTEL:
 /ritiro - Cognome + Stanza → AUTOMATICO!
 /riconsegna - Richiesta riconsegna temporanea
+/rientro - Richiesta rientro in parcheggio
 /prenota - Prenotazioni partenza
 /mostra_prenotazioni - Visualizza prenotazioni
 
 🚗 VALET:
 /recupero - Gestione recuperi
-/rientro - Rientro in parcheggio
 /park - Conferma parcheggio
 /completa - Completa dati auto (targa + BOX + foto)
 /partito - Uscita definitiva
@@ -216,6 +224,9 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /prenota → Prenotazioni partenza future
   📱 Notifica ai Valet con data/ora
   
+/rientro → Richiesta rientro in parcheggio
+  📱 Notifica ai Valet per il recupero
+  
 /mostra_prenotazioni → Lista prenotazioni attive
 
 🚗 VALET (WORKFLOW AVANZATO):
@@ -223,8 +234,6 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   ⏱️ 15/30/45 minuti ca.
   🚙 In coda (altri ritiri prima)
   ⚠️ Possibile ritardo
-
-/rientro → Rientro auto da stand-by
 /park → Conferma parcheggio completato
 /completa → Workflow completo:
   🚗 Targa reale → 📦 BOX → 📷 Foto
@@ -782,7 +791,8 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   auto_id=int(data.split('_')[1])
   db_query('UPDATE auto SET stato=? WHERE id=?',('rientro',auto_id),'none')
   auto=get_auto_by_id(auto_id)
-  await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+  await invia_notifica_rientro(context,auto)
+  await query.edit_message_text(f"🔄 RIENTRO RICHIESTO!\n\n🚗 {auto[1]} - Stanza {auto[3]}\n👤 {auto[2]}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📱 Notifica inviata ai Valet!")
 
  elif data.startswith('modifica_'):
   auto_id=int(data.split('_')[1])
