@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.01"
+BOT_VERSION="6.02"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -115,6 +115,8 @@ async def invia_notifica_avviato(context:ContextTypes.DEFAULT_TYPE,auto,tempo_st
   
   if tipo_operazione == 'rientro':
    titolo = "🔄 RIENTRO AVVIATO!"
+  elif tipo_operazione == 'riconsegna':
+   titolo = "🚪 RICONSEGNA AVVIATA!"
   else:
    titolo = "🚀 RECUPERO AVVIATO!"
   
