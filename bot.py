@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.07"
+BOT_VERSION="6.05"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -501,17 +501,9 @@ async def handle_modifica(update,context,state,text):
    try:value=int(text);assert 0<=value<=999
    except:await update.message.reply_text("❌ Stanza 0-999!");return
   elif field in['box','note']:
-   if field=='box':
-    if not text.isdigit() or not 0<=int(text)<=999:
-     await update.message.reply_text("❌ BOX deve essere un numero 0-999!");return
-    value=int(text)
-   elif field=='note':
-    if text.lower()=='rimuovi':
-     value=None
-    else:
-     value=text.strip()
-   else:
-    value=None
+   value=None if text.lower()=='rimuovi'else(int(text)if field=='box'and text.isdigit()and 0<=int(text)<=999 else text.strip()if field=='note'else None)
+   if field=='box'and text.lower()!='rimuovi'and(not text.isdigit()or not 0<=int(text)<=999):
+    await update.message.reply_text("❌ BOX 0-999 o 'rimuovi'!");return
   
   field_db={'box':'numero_chiave'}.get(field,field)
   if db_query(f'UPDATE auto SET {field_db}=? WHERE id=?',(value,auto_id),'none'):
@@ -812,7 +804,7 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   field,auto_id=data.split('_')[1],int(data.split('_')[2])
   auto=get_auto_by_id(auto_id)
   context.user_data['state']=f'mod_{field}_{auto_id}'
-     prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):','box':'📦 Numero BOX (0-999):','note':'📝 Nuove NOTE o rimuovi:'}
+     prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):','box':'📦 Nuovo BOX (0-999) o rimuovi:','note':'📝 Nuove NOTE o rimuovi:'}
   await query.edit_message_text(f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompts[field]}")
 
  elif data=='annulla_op':
