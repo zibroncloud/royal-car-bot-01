@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.05"
+BOT_VERSION="6.06"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
