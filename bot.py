@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.06"
+BOT_VERSION="6.07"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -501,17 +501,17 @@ async def handle_modifica(update,context,state,text):
    try:value=int(text);assert 0<=value<=999
    except:await update.message.reply_text("❌ Stanza 0-999!");return
   elif field in['box','note']:
-   if text.lower()=='rimuovi' and field=='note':
-    value=None
-   elif field=='box' and text.isdigit() and 0<=int(text)<=999:
+   if field=='box':
+    if not text.isdigit() or not 0<=int(text)<=999:
+     await update.message.reply_text("❌ BOX deve essere un numero 0-999!");return
     value=int(text)
    elif field=='note':
-    value=text.strip()
+    if text.lower()=='rimuovi':
+     value=None
+    else:
+     value=text.strip()
    else:
     value=None
-   
-   if field=='box' and (not text.isdigit() or not 0<=int(text)<=999):
-    await update.message.reply_text("❌ BOX deve essere un numero 0-999!");return
   
   field_db={'box':'numero_chiave'}.get(field,field)
   if db_query(f'UPDATE auto SET {field_db}=? WHERE id=?',(value,auto_id),'none'):
