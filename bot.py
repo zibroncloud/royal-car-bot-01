@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# CarValetBOT v6.01 by Zibroncloud - VERSIONE SEMPLICE E FUNZIONANTE
+# CarValetBOT v6.09 by Zibroncloud - BOX sempre obbligatorio
 import os,logging,sqlite3,re
 from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.08"
+BOT_VERSION="6.09"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -144,6 +144,8 @@ async def invia_notifica_rientro(context:ContextTypes.DEFAULT_TYPE,auto):
   await context.bot.send_message(chat_id=CANALE_VALET,text=msg,reply_markup=InlineKeyboardMarkup(keyboard))
   return True
  except Exception as e:logging.error(f"Errore notifica rientro: {e}");return False
+
+async def invia_notifica_prenotazione(context:ContextTypes.DEFAULT_TYPE,auto,data,ora):
  try:
   ghost_text=" 👻" if auto[14] else ""
   numero_text=f"#{auto[11]}" if not auto[14] else "GHOST"
@@ -191,7 +193,7 @@ By Zibroncloud
 /mostra_prenotazioni - Visualizza prenotazioni
 
 🚗 VALET:
-/recupero - Gestione recuperi
+/recupero - Gestione operazioni
 /park - Conferma parcheggio
 /completa - Completa dati auto (targa + BOX + foto)
 /partito - Uscita definitiva
@@ -206,7 +208,7 @@ By Zibroncloud
 
 ❓ /help /annulla
 
-🆕 v6.01: Notifiche complete + workflow ottimizzato"""
+🆕 v6.09: BOX sempre obbligatorio + workflow ottimizzato"""
  await update.message.reply_text(msg)
 
 async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -221,9 +223,6 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 /riconsegna → Richiesta riconsegna temporanea
   📱 Notifica ai Valet per il recupero
   
-/prenota → Prenotazioni partenza future
-  📱 Notifica ai Valet con data/ora
-  
 /rientro → Richiesta rientro in parcheggio
   📱 Notifica ai Valet per il recupero
   
@@ -234,6 +233,7 @@ async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   ⏱️ 15/30/45 minuti ca.
   🚙 In coda (altri ritiri prima)
   ⚠️ Possibile ritardo
+
 /park → Conferma parcheggio completato
 /completa → Workflow completo:
   🚗 Targa reale → 📦 BOX → 📷 Foto
@@ -254,6 +254,7 @@ Hotel: /ritiro → Notifica → Valet: /recupero → /park → /completa → /pa
 ✅ Nuove richieste ritiro
 ✅ Recuperi avviati con tempistiche  
 ✅ Richieste riconsegna
+✅ Richieste rientro
 ✅ Prenotazioni partenza"""
  await update.message.reply_text(msg)
 
@@ -261,7 +262,7 @@ Hotel: /ritiro → Notifica → Valet: /recupero → /park → /completa → /pa
 async def ritiro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  context.user_data.clear()
  context.user_data['state']='ritiro_cognome'
- await update.message.reply_text("🚗 RITIRO SEMPLIFICATO v6.01\n\n👤 Inserisci il COGNOME del cliente:")
+ await update.message.reply_text("🚗 RITIRO SEMPLIFICATO v6.09\n\n👤 Inserisci il COGNOME del cliente:")
 
 async def prenota_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  auto_list=db_query('SELECT id,targa,cognome,stanza,numero_chiave,stato,is_ghost FROM auto WHERE stato!="uscita" ORDER BY is_ghost,stanza')
@@ -300,6 +301,9 @@ async def mostra_prenotazioni_command(update:Update,context:ContextTypes.DEFAULT
 async def riconsegna_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"riconsegna","🚪 RICONSEGNA TEMPORANEA","stato='parcheggiata'")
 
+async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ await generic_auto_selection(update,"rientro","🔄 RIENTRO IN PARCHEGGIO","stato='stand-by'")
+
 # ===== VALET COMMANDS =====
 async def recupero_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  auto_list=db_query('SELECT id,targa,cognome,stanza,numero_chiave,numero_progressivo,stato,is_ghost FROM auto WHERE stato IN ("richiesta","riconsegna","rientro") ORDER BY is_ghost,numero_progressivo')
@@ -322,9 +326,6 @@ async def handle_recupero_specifico(update,context,auto_id,tipo_op):
  num_text=f"#{auto[11]}" if not auto[14] else "GHOST"
  msg=f"⏰ {operazioni[tipo_op]}\n\n{num_text} | {auto[1]} ({auto[2]}){ghost_text}\n🏨 Stanza: {auto[3]}\n\nSeleziona tempistica:"
  await update.effective_message.reply_text(msg,reply_markup=create_tempo_keyboard(auto_id,tipo_op))
-
-async def rientro_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
- await generic_auto_selection(update,"rientro","🔄 RIENTRO IN PARCHEGGIO","stato='stand-by'")
 
 async def park_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  await generic_auto_selection(update,"park","🅿️ CONFERMA PARCHEGGIO","stato='ritiro'")
@@ -432,7 +433,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   filename=f"carvalet_export_{now_italy().strftime('%Y%m%d_%H%M%S')}.csv"
   with open(filename,'w',encoding='utf-8')as f:f.write(csv_content)
   with open(filename,'rb')as f:
-   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v6.01 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
+   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v6.09 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
   os.remove(filename)
  except Exception as e:
   logging.error(f"Export error: {e}")
@@ -509,11 +510,10 @@ async def handle_modifica(update,context,state,text):
     value=None
    else:
     value=text.strip()
-  
+   
   field_db={'box':'numero_chiave'}.get(field,field)
   if db_query(f'UPDATE auto SET {field_db}=? WHERE id=?',(value,auto_id),'none'):
-   result_text={'box':f"BOX {'rimosso'if value is None else f'impostato a {value}'}",
-               'note':f"Note {'rimosse'if value is None else'aggiornate'}"}.get(field,f"{field.title()} aggiornato")
+   result_text={'note':f"Note {'rimosse'if value is None else'aggiornate'}"}.get(field,f"{field.title()} aggiornato")
    await update.message.reply_text(f"✅ {result_text}\n🚗 {auto[1]} - Stanza {auto[3]}")
   context.user_data.clear()
  except Exception as e:
@@ -549,21 +549,17 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
   auto_id=int(state.split('_')[2])
   if not validate_targa(text):await update.message.reply_text("❌ Targa non valida! Inserisci targa reale:");return
   if db_query('UPDATE auto SET targa=? WHERE id=?',(text.upper(),auto_id),'none'):
-   await update.message.reply_text(f"✅ Targa aggiornata: {text.upper()}\n\n📦 Ora inserisci il numero BOX (0-999) o 'skip':")
+   await update.message.reply_text(f"✅ Targa aggiornata: {text.upper()}\n\n📦 Ora inserisci il numero BOX (0-999):")
    context.user_data['state']=f'completa_box_{auto_id}'
   else:await update.message.reply_text("❌ Errore aggiornamento targa");context.user_data.clear()
  
  elif state.startswith('completa_box_'):
   auto_id=int(state.split('_')[2])
-  if text.lower()=='skip':
-   box_value=None
-   await update.message.reply_text("📦 BOX non assegnato\n\n📷 Vuoi caricare foto? Invia foto o scrivi 'skip' per terminare:")
-  else:
-   try:
-    box_value=int(text)
-    if not 0<=box_value<=999:await update.message.reply_text("❌ BOX 0-999 o 'skip'!");return
-    await update.message.reply_text(f"✅ BOX assegnato: {box_value}\n\n📷 Vuoi caricare foto? Invia foto o scrivi 'skip' per terminare:")
-   except:await update.message.reply_text("❌ BOX numero valido o 'skip'!");return
+  try:
+   box_value=int(text)
+   if not 0<=box_value<=999:await update.message.reply_text("❌ BOX 0-999!");return
+   await update.message.reply_text(f"✅ BOX assegnato: {box_value}\n\n📷 Vuoi caricare foto? Invia foto o scrivi 'skip' per terminare:")
+  except:await update.message.reply_text("❌ BOX numero valido!");return
   
   if db_query('UPDATE auto SET numero_chiave=? WHERE id=?',(box_value,auto_id),'none'):
    context.user_data['state']=f'completa_foto_{auto_id}'
@@ -806,10 +802,11 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   await query.edit_message_text(f"✏️ MODIFICA AUTO\n\n🚗 {auto[1]} - {auto[2]}\n🏨 Stanza: {auto[3]}\n📦 {box_text}\n📝 {note_text}\n\nCosa modificare?",reply_markup=keyboard)
  
  elif data.startswith('mod_'):
-  field,auto_id=data.split('_')[1],int(data.split('_')[2])
+  parts=data.split('_')
+  field,auto_id=parts[1],int(parts[2])
   auto=get_auto_by_id(auto_id)
   context.user_data['state']=f'mod_{field}_{auto_id}'
-     prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):',   'box':'📦 Numero BOX (0-999):','note':'📝 Nuove NOTE o rimuovi:'}
+  prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):','box':'📦 Numero BOX (0-999):','note':'📝 Nuove NOTE o rimuovi:'}
   await query.edit_message_text(f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompts[field]}")
 
  elif data=='annulla_op':
