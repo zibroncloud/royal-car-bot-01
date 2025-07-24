@@ -5,7 +5,7 @@ from datetime import datetime,date,timedelta
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import Application,CommandHandler,MessageHandler,filters,ContextTypes,CallbackQueryHandler
 
-BOT_VERSION="6.09"
+BOT_VERSION="6.10"
 BOT_NAME="CarValetBOT"
 CANALE_VALET="-1002582736358"
 
@@ -616,12 +616,23 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
   try:
    stanza=int(text)
    if not 0<=stanza<=999:await update.message.reply_text("❌ Stanza 0-999!");return
-   targa,cognome=context.user_data['targa'],context.user_data['cognome']
-   auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,CURRENT_DATE,CURRENT_DATE,?)',
-                   (targa,cognome,stanza,None,'Auto già parcheggiata','parcheggiata',0),'lastid')
-   await update.message.reply_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
-   context.user_data.clear()
+   context.user_data['stanza']=stanza
+   context.user_data['state']='makepark_data'
+   await update.message.reply_text("📅 Data ENTRATA in parcheggio (gg/mm/aaaa):")
   except:await update.message.reply_text("❌ Numero stanza non valido!")
+ 
+ elif state=='makepark_data':
+  if not validate_date_format(text):await update.message.reply_text("❌ Formato data gg/mm/aaaa!");return
+  try:
+   targa,cognome,stanza=context.user_data['targa'],context.user_data['cognome'],context.user_data['stanza']
+   data_sql=datetime.strptime(text,'%d/%m/%Y').strftime('%Y-%m-%d')
+   auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,?,?,?)',
+                   (targa,cognome,stanza,None,'Auto già parcheggiata','parcheggiata',data_sql,data_sql,0),'lastid')
+   await update.message.reply_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n📅 Entrata: {text}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+   context.user_data.clear()
+  except Exception as e:
+   await update.message.reply_text("❌ Errore salvataggio auto")
+   context.user_data.clear()
  
  elif state.startswith('mod_'):
   await handle_modifica(update,context,state,text)
