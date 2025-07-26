@@ -208,7 +208,7 @@ By Zibroncloud
 
 ❓ /help /annulla
 
-🆕 v6.09: BOX sempre obbligatorio + workflow ottimizzato"""
+🆕 v6.10: /makepark aggiornato con auto partite"""
  await update.message.reply_text(msg)
 
 async def help_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -433,7 +433,7 @@ async def export_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
   filename=f"carvalet_export_{now_italy().strftime('%Y%m%d_%H%M%S')}.csv"
   with open(filename,'w',encoding='utf-8')as f:f.write(csv_content)
   with open(filename,'rb')as f:
-   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v6.09 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
+   await update.message.reply_document(document=f,filename=filename,caption=f"📊 EXPORT v6.10 - {now_italy().strftime('%d/%m/%Y alle %H:%M')}\n📁 {len(auto_data)} auto totali")
   os.remove(filename)
  except Exception as e:
   logging.error(f"Export error: {e}")
@@ -462,7 +462,7 @@ async def ghostcar_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
 async def makepark_command(update:Update,context:ContextTypes.DEFAULT_TYPE):
  context.user_data.clear()
  context.user_data.update({'state':'makepark_targa','is_ghost':False})
- await update.message.reply_text("🅿️ AUTO GIÀ PARCHEGGIATA\n\nInserisci la TARGA del veicolo:")
+ await update.message.reply_text("🅿️ AUTO GIÀ PARCHEGGIATA/PARTITA\n\nInserisci la TARGA del veicolo:")
 
 # ===== UTILITY FUNCTIONS =====
 async def generic_auto_selection(update,action,title,where_clause):
@@ -623,12 +623,25 @@ async def handle_message(update:Update,context:ContextTypes.DEFAULT_TYPE):
  
  elif state=='makepark_data':
   if not validate_date_format(text):await update.message.reply_text("❌ Formato data gg/mm/aaaa!");return
+  context.user_data['data_entrata']=text
+  context.user_data['state']='makepark_status'
+  # Mostra pulsanti per scegliere lo stato
+  keyboard=InlineKeyboardMarkup([
+   [InlineKeyboardButton("🅿️ Auto in parcheggio",callback_data="makepark_parcheggiata")],
+   [InlineKeyboardButton("🏁 Auto partita",callback_data="makepark_partita")]
+  ])
+  await update.message.reply_text("🚗 Stato dell'auto:",reply_markup=keyboard)
+
+ elif state=='makepark_data_uscita':
+  if not validate_date_format(text):await update.message.reply_text("❌ Formato data gg/mm/aaaa!");return
   try:
    targa,cognome,stanza=context.user_data['targa'],context.user_data['cognome'],context.user_data['stanza']
-   data_sql=datetime.strptime(text,'%d/%m/%Y').strftime('%Y-%m-%d')
-   auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,?,?,?)',
-                   (targa,cognome,stanza,None,'Auto già parcheggiata','parcheggiata',data_sql,data_sql,0),'lastid')
-   await update.message.reply_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n📅 Entrata: {text}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+   data_entrata,data_uscita=context.user_data['data_entrata'],text
+   data_entrata_sql=datetime.strptime(data_entrata,'%d/%m/%Y').strftime('%Y-%m-%d')
+   data_uscita_sql=datetime.strptime(data_uscita,'%d/%m/%Y').strftime('%Y-%m-%d')
+   auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,data_uscita,is_ghost) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                   (targa,cognome,stanza,None,'Auto già partita','uscita',data_entrata_sql,data_entrata_sql,data_uscita_sql,0),'lastid')
+   await update.message.reply_text(f"🏁 AUTO PARTITA REGISTRATA!\n\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n📅 Entrata: {data_entrata}\n🏁 Uscita: {data_uscita}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
    context.user_data.clear()
   except Exception as e:
    await update.message.reply_text("❌ Errore salvataggio auto")
@@ -819,6 +832,23 @@ async def handle_callback_query(update:Update,context:ContextTypes.DEFAULT_TYPE)
   context.user_data['state']=f'mod_{field}_{auto_id}'
   prompts={'targa':'🚗 Nuova TARGA:','cognome':'👤 Nuovo COGNOME:','stanza':'🏨 Nuova STANZA (0-999):','box':'📦 Numero BOX (0-999):','note':'📝 Nuove NOTE o rimuovi:'}
   await query.edit_message_text(f"✏️ MODIFICA {field.upper()}\n\n{auto[1]} - Stanza {auto[3]}\n\n{prompts[field]}")
+
+ elif data=='makepark_parcheggiata':
+  try:
+   targa,cognome,stanza=context.user_data['targa'],context.user_data['cognome'],context.user_data['stanza']
+   data_entrata=context.user_data['data_entrata']
+   data_sql=datetime.strptime(data_entrata,'%d/%m/%Y').strftime('%Y-%m-%d')
+   auto_id=db_query('INSERT INTO auto (targa,cognome,stanza,numero_chiave,note,stato,data_arrivo,data_park,is_ghost) VALUES (?,?,?,?,?,?,?,?,?)',
+                   (targa,cognome,stanza,None,'Auto già parcheggiata','parcheggiata',data_sql,data_sql,0),'lastid')
+   await query.edit_message_text(f"🅿️ AUTO PARCHEGGIATA REGISTRATA!\n\n🚗 {targa}\n👤 {cognome}\n🏨 Stanza {stanza}\n📅 Entrata: {data_entrata}\n\n📅 {now_italy().strftime('%d/%m/%Y alle %H:%M')}")
+   context.user_data.clear()
+  except Exception as e:
+   await query.edit_message_text("❌ Errore salvataggio auto")
+   context.user_data.clear()
+
+ elif data=='makepark_partita':
+  context.user_data['state']='makepark_data_uscita'
+  await query.edit_message_text("📅 Data USCITA dell'auto (gg/mm/aaaa):")
 
  elif data=='annulla_op':
   await query.edit_message_text("❌ Operazione annullata")
